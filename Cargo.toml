@@ -7,7 +7,7 @@ homepage = "https://github.com/ierror/synaps-cad"
 readme = "README.md"
 version = "0.0.0"
 edition = "2024"
-exclude = ["target/", "tmp/", ".claude/", ".github/"]
+publish = false
 
 [dependencies]
 bevy = "0.15"
