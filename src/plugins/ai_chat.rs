@@ -1,0 +1,652 @@
+use bevy::prelude::*;
+use std::sync::{Mutex, mpsc};
+
+use super::code_editor::ScadCode;
+use super::compilation::PartLabel;
+
+pub struct AiChatPlugin;
+
+const DEFAULT_SYSTEM_PROMPT: &str = "\
+You are an AI assistant for a 3D CAD application (SynapsCAD). \
+The user is working with OpenSCAD code. Help them modify their 3D models.\n\
+\n\
+## Code Output\n\
+When providing code, wrap it in a ```synapscad``` block. \
+Always use the `$view` system: define your geometry in a module and select it with an \
+`if ($view == \"name\")` conditional. Start with a single view called \"main\":\n\
+```\n\
+$view = \"main\";\n\
+module view_main() { /* all geometry here */ }\n\
+if ($view == \"main\") view_main();\n\
+```\n\
+Only add additional views (e.g. \"assembly\", \"part_a\") when the user explicitly asks for them. \
+\n\
+## General Guidelines\n\
+Be concise and helpful.\n\
+Always verify your results after making changes with the given 3D context \
+information (orthographic views, bounding boxes, part counts). \
+If something is unclear, ask clarifying questions before making changes. \
+If something looks wrong in the rendered views, suggest corrections.\n\
+\n\
+## Part Colors\n\
+Use `color()` to give each part a realistic, semantically meaningful color. \
+For example: green for plants/leaves, brown for wood/soil, red for flowers, \
+gray for metal/concrete, blue for water, white for snow, orange for flames. \
+Always pick colors that match the real-world material or object being modeled. \
+Example: `color(\"green\") cylinder(h = 20, r = 3);` for a plant stem.";
+
+/// Supported AI provider adapters.
+pub const ADAPTER_NAMES: &[&str] = &[
+    "Anthropic",
+    "OpenAI",
+    "Gemini",
+    "Groq",
+    "Ollama",
+    "DeepSeek",
+    "Cohere",
+    "Fireworks",
+    "Together",
+    "Xai",
+    "Zai",
+];
+
+/// Returns the environment variable name used for the API key of the given adapter.
+/// Returns `None` for adapters that don't need an API key (e.g. Ollama).
+pub fn env_var_for_adapter(adapter: &str) -> Option<&'static str> {
+    match adapter {
+        "Anthropic" => Some("ANTHROPIC_API_KEY"),
+        "OpenAI" => Some("OPENAI_API_KEY"),
+        "Gemini" => Some("GEMINI_API_KEY"),
+        "Groq" => Some("GROQ_API_KEY"),
+        "DeepSeek" => Some("DEEPSEEK_API_KEY"),
+        "Cohere" => Some("COHERE_API_KEY"),
+        "Fireworks" => Some("FIREWORKS_API_KEY"),
+        "Together" => Some("TOGETHER_API_KEY"),
+        "Xai" => Some("XAI_API_KEY"),
+        "Zai" => Some("ZAI_API_KEY"),
+        _ => None,
+    }
+}
+
+#[derive(Resource)]
+pub struct AiConfig {
+    pub adapter_name: String,
+    pub model_name: String,
+    pub api_key: String,
+    pub system_prompt: String,
+    pub temperature: f64,
+    /// Maximum automatic verification rounds (u32::MAX = unlimited).
+    pub max_verification_rounds: u32,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self {
+            adapter_name: "Anthropic".into(),
+            model_name: "claude-3-5-sonnet-latest".into(),
+            api_key: String::new(),
+            system_prompt: DEFAULT_SYSTEM_PROMPT.into(),
+            temperature: 0.7,
+            max_verification_rounds: 2,
+        }
+    }
+}
+
+/// Dynamically fetched model names for the selected adapter.
+#[derive(Resource, Default)]
+pub struct AvailableModels {
+    pub models: Vec<String>,
+    pub loading: bool,
+    pub last_adapter: String,
+    pub last_api_key: String,
+    pub error: Option<String>,
+    /// Set to true when the persisted model is no longer available.
+    pub needs_configuration: bool,
+    #[allow(clippy::type_complexity)]
+    pub receiver: Option<Mutex<mpsc::Receiver<Result<Vec<String>, String>>>>,
+}
+
+/// An image attached to a chat message, stored as base64 PNG/JPEG.
+#[derive(Clone, Debug)]
+pub struct ChatImage {
+    pub filename: String,
+    pub mime_type: String,
+    pub base64_data: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+    /// Optional reasoning/thinking content from the model.
+    pub thinking: Option<String>,
+    /// Images attached to this message.
+    pub images: Vec<ChatImage>,
+}
+
+#[derive(Debug)]
+pub enum AiStreamChunk {
+    Done {
+        content: String,
+        reasoning: Option<String>,
+    },
+    Error(String),
+}
+
+/// Maximum number of automatic verify-and-fix rounds per user request.
+/// Predefined choices for the UI dropdown.
+pub const VERIFICATION_ROUND_CHOICES: &[u32] = &[1, 2, 5, 10, 15, 20, 50, 100, u32::MAX];
+
+const VERIFICATION_PROMPT: &str = "\
+These are the rendered orthographic views AFTER your code change was compiled. \
+Compare them carefully against the user's original request. \
+If the result does NOT match what was asked for, provide corrected code in an ```synapscad block. \
+If it looks correct, briefly confirm what you see — do NOT repeat the code.";
+
+#[derive(Resource, Default)]
+pub struct ChatState {
+    pub messages: Vec<ChatMessage>,
+    pub input_buffer: String,
+    pub input_history: Vec<String>,
+    pub history_index: Option<usize>,
+    pub is_streaming: bool,
+    pub stream_receiver: Option<Mutex<mpsc::Receiver<AiStreamChunk>>>,
+    /// Images queued to attach to the next sent message.
+    pub pending_images: Vec<ChatImage>,
+    /// When the AI produces code that triggers compilation, this is set to
+    /// `WaitingForCompilation`. After compilation completes and views update,
+    /// it transitions to `ReadyToVerify` and a verification round fires.
+    pub verification: VerificationState,
+}
+
+/// Tracks the auto-verification loop state.
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub enum VerificationState {
+    #[default]
+    Idle,
+    /// AI produced code; waiting for compilation to finish and views to update.
+    WaitingForCompilation,
+    /// Compilation done, new views available — trigger verification call.
+    ReadyToVerify,
+    /// Currently running a verification round (the Nth).
+    Verifying(u32),
+}
+
+#[derive(Resource)]
+pub struct TokioRuntime(pub tokio::runtime::Runtime);
+
+impl Plugin for AiChatPlugin {
+    fn build(&self, app: &mut App) {
+        let tokio_rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+        app.init_resource::<AiConfig>()
+            .init_resource::<ChatState>()
+            .init_resource::<AvailableModels>()
+            .insert_resource(TokioRuntime(tokio_rt))
+            .add_systems(
+                Update,
+                (
+                    fetch_models_system,
+                    ai_send_system,
+                    ai_receive_system,
+                    ai_verify_system,
+                )
+                    .chain(),
+            );
+    }
+}
+
+/// Fetch model names when adapter selection changes.
+fn fetch_models_system(
+    ai_config: Res<AiConfig>,
+    mut available: ResMut<AvailableModels>,
+    runtime: Res<TokioRuntime>,
+) {
+    // Poll for results from a pending fetch
+    if let Some(ref rx_mutex) = available.receiver {
+        let rx = rx_mutex.lock().unwrap();
+        if let Ok(result) = rx.try_recv() {
+            drop(rx);
+            available.loading = false;
+            available.receiver = None;
+            match result {
+                Ok(models) => {
+                    available.error = None;
+                    // Only flag reconfiguration when switching adapters and
+                    // the persisted model doesn't match ANY known model.
+                    if !ai_config.model_name.is_empty()
+                        && !models.contains(&ai_config.model_name)
+                        && available.last_adapter != ai_config.adapter_name
+                    {
+                        available.needs_configuration = true;
+                    } else {
+                        available.needs_configuration = false;
+                    }
+                    available.models = models;
+                }
+                Err(e) => {
+                    eprintln!("[SynapsCAD] Failed to fetch models: {e}");
+                    available.models.clear();
+                    available.error = Some(e);
+                    available.needs_configuration = true;
+                }
+            }
+            return;
+        }
+    }
+
+    // Trigger a new fetch if adapter or API key changed
+    let key_changed = available.last_api_key != ai_config.api_key;
+    if (available.last_adapter != ai_config.adapter_name || key_changed) && !available.loading {
+        available.last_adapter.clone_from(&ai_config.adapter_name);
+        available.last_api_key.clone_from(&ai_config.api_key);
+        available.loading = true;
+
+        let adapter_name = ai_config.adapter_name.clone();
+        let api_key = if ai_config.api_key.is_empty() {
+            None
+        } else {
+            Some(ai_config.api_key.clone())
+        };
+        let (tx, rx) = mpsc::channel();
+        available.receiver = Some(Mutex::new(rx));
+
+        runtime.0.spawn(async move {
+            let result = fetch_model_names(&adapter_name, api_key.as_deref()).await;
+            let _ = tx.send(result);
+        });
+    }
+}
+
+async fn fetch_model_names(
+    adapter_name: &str,
+    api_key: Option<&str>,
+) -> Result<Vec<String>, String> {
+    use genai::Client;
+    use genai::adapter::AdapterKind;
+    use genai::resolver::AuthData;
+
+    let adapter_kind = match adapter_name {
+        "OpenAI" => AdapterKind::OpenAI,
+        "Anthropic" => AdapterKind::Anthropic,
+        "Gemini" => AdapterKind::Gemini,
+        "Groq" => AdapterKind::Groq,
+        "Ollama" => AdapterKind::Ollama,
+        "DeepSeek" => AdapterKind::DeepSeek,
+        "Cohere" => AdapterKind::Cohere,
+        "Fireworks" => AdapterKind::Fireworks,
+        "Together" => AdapterKind::Together,
+        "Xai" => AdapterKind::Xai,
+        "Zai" => AdapterKind::Zai,
+        other => return Err(format!("Unknown adapter: {other}")),
+    };
+
+    // genai's all_model_names() uses default_auth() (env var) and ignores the
+    // client's auth resolver, so it only succeeds when the env var is set.
+    let client = api_key.map_or_else(Client::default, |key| {
+        let key = key.to_string();
+        Client::builder()
+            .with_auth_resolver_fn(move |_| Ok(Some(AuthData::Key(key.clone()))))
+            .build()
+    });
+    match client.all_model_names(adapter_kind).await {
+        Ok(models) if !models.is_empty() => Ok(models),
+        _ => Ok(fallback_models(adapter_name)),
+    }
+}
+
+/// Curated model lists used when the live API query fails (e.g. no env var).
+fn fallback_models(adapter_name: &str) -> Vec<String> {
+    match adapter_name {
+        "OpenAI" => vec![
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "gpt-4.1-nano",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "o4-mini",
+            "o3",
+            "o3-mini",
+        ],
+        "Anthropic" => vec![
+            "claude-sonnet-4-20250514",
+            "claude-3-7-sonnet-latest",
+            "claude-3-5-sonnet-latest",
+            "claude-3-5-haiku-latest",
+            "claude-3-opus-latest",
+        ],
+        "Gemini" => vec![
+            "gemini-2.5-pro-preview-06-05",
+            "gemini-2.5-flash-preview-05-20",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
+        ],
+        "Groq" => vec![
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "gemma2-9b-it",
+            "mixtral-8x7b-32768",
+        ],
+        "DeepSeek" => vec!["deepseek-chat", "deepseek-reasoner"],
+        "Cohere" => vec!["command-r-plus", "command-r", "command-light"],
+        "Xai" => vec!["grok-3", "grok-3-mini", "grok-2"],
+        "Fireworks" | "Together" => vec!["llama-v3p3-70b-instruct".into()],
+        _ => vec![],
+    }
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+fn ai_send_system(
+    mut chat_state: ResMut<ChatState>,
+    runtime: Res<TokioRuntime>,
+    scad_code: Res<ScadCode>,
+    ai_config: Res<AiConfig>,
+    model_views: Res<super::compilation::ModelViews>,
+    part_query: Query<&PartLabel>,
+) {
+    if !chat_state.is_streaming || chat_state.stream_receiver.is_some() {
+        return;
+    }
+
+    let messages = chat_state.messages.clone();
+    let part_context = build_part_context(&part_query);
+    // Collect user-attached images from the most recent user message
+    let user_images: Vec<ChatImage> = messages
+        .last()
+        .filter(|m| m.role == "user")
+        .map(|m| m.images.clone())
+        .unwrap_or_default();
+
+    let current_code = scad_code.text.clone();
+    let model_name = ai_config.model_name.clone();
+    let api_key = if ai_config.api_key.is_empty() {
+        None
+    } else {
+        Some(ai_config.api_key.clone())
+    };
+    let system_prompt = ai_config.system_prompt.clone();
+    let temperature = ai_config.temperature;
+    let views = model_views.views.clone();
+
+    let (tx, rx) = mpsc::channel();
+    chat_state.stream_receiver = Some(Mutex::new(rx));
+
+    runtime.0.spawn(async move {
+        let result = run_ai_stream(
+            messages,
+            current_code,
+            &model_name,
+            api_key.as_deref(),
+            &system_prompt,
+            temperature,
+            &views,
+            part_context,
+            &user_images,
+            tx.clone(),
+        )
+        .await;
+        if let Err(e) = result {
+            let _ = tx.send(AiStreamChunk::Error(format!("AI error: {e}")));
+        }
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_ai_stream(
+    messages: Vec<ChatMessage>,
+    current_code: String,
+    model_name: &str,
+    api_key: Option<&str>,
+    base_system_prompt: &str,
+    temperature: f64,
+    views: &[(String, String)],
+    part_context: String,
+    user_images: &[ChatImage],
+    tx: mpsc::Sender<AiStreamChunk>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use genai::Client;
+    use genai::chat::{
+        ChatMessage as GenaiMessage, ChatOptions, ChatRequest, ContentPart, MessageContent,
+    };
+    use genai::resolver::AuthData;
+
+    let client = api_key.map_or_else(Client::default, |key| {
+        let key = key.to_string();
+        Client::builder()
+            .with_auth_resolver_fn(move |_| Ok(Some(AuthData::Key(key.clone()))))
+            .build()
+    });
+
+    let mut system_prompt =
+        format!("{base_system_prompt}\n\nCurrent OpenSCAD code:\n```\n{current_code}\n```\n");
+    if !part_context.is_empty() {
+        system_prompt.push('\n');
+        system_prompt.push_str(&part_context);
+    }
+
+    let mut chat_req = ChatRequest::default().with_system(system_prompt);
+
+    for msg in &messages {
+        match msg.role.as_str() {
+            "user" => {
+                chat_req = chat_req.append_message(GenaiMessage::user(&msg.content));
+            }
+            "assistant" => {
+                chat_req = chat_req.append_message(GenaiMessage::assistant(&msg.content));
+            }
+            _ => {}
+        }
+    }
+
+    // Attach orthographic views to the last user message if available
+    if !views.is_empty() {
+        let mut parts = vec![ContentPart::from_text(
+            "Current 3D model rendered from three orthographic views:",
+        )];
+        for (label, base64_png) in views {
+            if !base64_png.is_empty() {
+                parts.push(ContentPart::from_text(format!("{label} view:")));
+                parts.push(ContentPart::from_binary_base64(
+                    "image/png",
+                    base64_png.as_str(),
+                    Some(format!("{label}_view.png")),
+                ));
+            }
+        }
+        let view_msg = GenaiMessage::user(MessageContent::from_parts(parts));
+        chat_req = chat_req.append_message(view_msg);
+    }
+
+    // Attach user-provided reference images
+    if !user_images.is_empty() {
+        let mut parts = vec![ContentPart::from_text("User-attached reference images:")];
+        for img in user_images {
+            parts.push(ContentPart::from_text(format!("{}:", img.filename)));
+            parts.push(ContentPart::from_binary_base64(
+                &img.mime_type,
+                img.base64_data.as_str(),
+                Some(img.filename.clone()),
+            ));
+        }
+        let img_msg = GenaiMessage::user(MessageContent::from_parts(parts));
+        chat_req = chat_req.append_message(img_msg);
+    }
+
+    // Ensure the conversation ends with a user message (some APIs require this)
+    let ends_with_user = !views.is_empty()
+        || !user_images.is_empty()
+        || messages.last().is_some_and(|m| m.role == "user");
+    if !ends_with_user {
+        chat_req = chat_req.append_message(GenaiMessage::user(
+            "Please respond to the conversation above.",
+        ));
+    }
+
+    let chat_options = ChatOptions::default().with_temperature(temperature);
+    let response = client
+        .exec_chat(model_name, chat_req, Some(&chat_options))
+        .await?;
+
+    let content = response.first_text().unwrap_or("(no response)").to_string();
+
+    let reasoning = response.reasoning_content;
+
+    let _ = tx.send(AiStreamChunk::Done { content, reasoning });
+
+    Ok(())
+}
+
+fn ai_receive_system(
+    mut chat_state: ResMut<ChatState>,
+    mut scad_code: ResMut<ScadCode>,
+    ai_config: Res<AiConfig>,
+) {
+    if !chat_state.is_streaming {
+        return;
+    }
+
+    let chunk = {
+        let Some(ref rx_mutex) = chat_state.stream_receiver else {
+            return;
+        };
+        let rx = rx_mutex.lock().unwrap();
+        match rx.try_recv() {
+            Ok(c) => c,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                drop(rx);
+                chat_state.is_streaming = false;
+                chat_state.stream_receiver = None;
+                return;
+            }
+        }
+    };
+
+    match chunk {
+        AiStreamChunk::Done { content, reasoning } => {
+            chat_state.messages.push(ChatMessage {
+                role: "assistant".into(),
+                content: content.clone(),
+                thinking: reasoning,
+                images: Vec::new(),
+            });
+            chat_state.is_streaming = false;
+            chat_state.stream_receiver = None;
+
+            if let Some(new_code) = extract_openscad_code(&content) {
+                scad_code.text = new_code;
+                scad_code.dirty = true;
+
+                // Figure out which verification round we're on
+                let round = match &chat_state.verification {
+                    VerificationState::Verifying(n) => *n,
+                    _ => 0,
+                };
+
+                if round < ai_config.max_verification_rounds {
+                    chat_state.verification = VerificationState::WaitingForCompilation;
+                } else {
+                    chat_state.verification = VerificationState::Idle;
+                }
+            } else {
+                // AI didn't produce code — verification loop is done
+                chat_state.verification = VerificationState::Idle;
+            }
+        }
+        AiStreamChunk::Error(err) => {
+            chat_state.messages.push(ChatMessage {
+                role: "assistant".into(),
+                content: err,
+                thinking: None,
+                images: Vec::new(),
+            });
+            chat_state.is_streaming = false;
+            chat_state.stream_receiver = None;
+        }
+    }
+}
+
+/// Watches for compilation to finish after AI-produced code, then triggers verification.
+fn ai_verify_system(
+    mut chat_state: ResMut<ChatState>,
+    compilation_state: Res<super::compilation::CompilationState>,
+    ai_config: Res<AiConfig>,
+) {
+    match chat_state.verification {
+        VerificationState::WaitingForCompilation => {
+            // Wait until compilation finishes
+            if !compilation_state.is_compiling {
+                chat_state.verification = VerificationState::ReadyToVerify;
+            }
+        }
+        VerificationState::ReadyToVerify => {
+            // Determine which round this will be
+            #[allow(clippy::cast_possible_truncation)]
+            let round = chat_state
+                .messages
+                .iter()
+                .rev()
+                .take_while(|m| m.role != "user" || m.content.starts_with("[Verification"))
+                .filter(|m| m.content.starts_with("[Verification"))
+                .count() as u32
+                + 1;
+
+            let max_label = if ai_config.max_verification_rounds == u32::MAX {
+                "∞".to_string()
+            } else {
+                ai_config.max_verification_rounds.to_string()
+            };
+
+            // Inject a verification user message
+            chat_state.messages.push(ChatMessage {
+                role: "user".into(),
+                content: format!("[Verification round {round}/{max_label}] {VERIFICATION_PROMPT}"),
+                thinking: None,
+                images: Vec::new(),
+            });
+
+            // Trigger the AI send
+            chat_state.is_streaming = true;
+            chat_state.verification = VerificationState::Verifying(round);
+        }
+        _ => {}
+    }
+}
+
+/// Build part context describing the compiled parts (@1, @2, ...) for the AI.
+fn build_part_context(part_query: &Query<&PartLabel>) -> String {
+    let mut parts: Vec<&PartLabel> = part_query.iter().collect();
+    if parts.is_empty() {
+        return String::new();
+    }
+    parts.sort_by_key(|p| p.index);
+
+    use std::fmt::Write;
+    let mut ctx = String::from("Compiled parts:\n");
+    for part in &parts {
+        let [r, g, b] = part.color;
+        let _ = write!(
+            ctx,
+            "  {}: color=({:.2}, {:.2}, {:.2})\n",
+            part.label, r, g, b
+        );
+    }
+    ctx.push_str("When the user references @N, it refers to the part listed above.\n");
+    ctx
+}
+
+/// Extracts OpenSCAD code from AI response.
+/// Supports `\`\`\`synapscad` code blocks (ignores any `:suffix`).
+fn extract_openscad_code(text: &str) -> Option<String> {
+    let marker = "```synapscad";
+    let start = text.find(marker)?;
+    let rest = &text[start + marker.len()..];
+
+    // Skip any :suffix and find the newline
+    let newline = rest.find('\n').unwrap_or(0);
+    let code_rest = &rest[newline..];
+    let end = code_rest.find("```")?;
+    let code = code_rest[..end].trim().to_string();
+    if code.is_empty() { None } else { Some(code) }
+}

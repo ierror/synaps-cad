@@ -1,0 +1,48 @@
+# Releasing
+
+This project uses [cargo-release](https://github.com/crate-ci/cargo-release) to automate releases.
+
+## First-time setup
+
+```bash
+cargo install cargo-release
+cargo login
+```
+
+The `cargo login` command requires an API token from https://crates.io/settings/tokens.
+
+## Releasing
+
+Dry-run (no changes made):
+
+```bash
+cargo release patch   # or minor, major
+```
+
+Execute the release:
+
+```bash
+cargo release patch --execute
+```
+
+This will:
+
+1. Bump the version in `Cargo.toml`
+2. Commit the version bump
+3. Create a git tag (`vX.Y.Z`)
+4. Publish to crates.io
+5. Push the commit and tag to GitHub
+
+## What happens next
+
+Once the tag is pushed, the GitHub Actions release workflow (`.github/workflows/release.yml`) automatically:
+
+1. Builds release binaries for all supported platforms:
+   - Linux x86_64
+   - macOS Apple Silicon (aarch64)
+   - macOS Intel (x86_64)
+   - Windows x86_64
+2. Packages them as `.tar.gz` (Linux/macOS) or `.zip` (Windows)
+3. Creates a GitHub Release with auto-generated release notes and all artifacts attached
+
+You can monitor the workflow run at **Actions > Release** in the GitHub repository.
