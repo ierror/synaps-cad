@@ -13,3 +13,7 @@ All notable changes to this project will be documented in this file.
 ## [0.2.1] - 2026-06-27
 
 - Fix: Updated README with correct release version and download instructions
+
+## [0.2.2] - 2026-06-27
+
+- Fix: Changed build target macos-13 to macos-latest
