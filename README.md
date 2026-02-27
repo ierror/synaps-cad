@@ -1,12 +1,16 @@
 # SynapsCAD
 
-The AI-powered 3D CAD IDE — edit code, visualize in 3D, and reshape your designs with natural language.
-
 <p align="center">
   <img src="assets/splash@2x.png" alt="SynapsCAD" width="280" />
 </p>
 
+The AI-powered 3D CAD IDE — edit code, visualize in 3D, and reshape your designs with natural language.
+
 > ⚠️ **Early Prototype** — Not all OpenSCAD code will compile correctly yet. Start with simple models and expect rough edges. Bug reports with code snippets that cause issues are very welcome!
+
+## See SynapsCAD in Action
+
+[![SynapsCAD Demo](https://img.youtube.com/vi/cN8a5UozS5Q/maxresdefault.jpg)](https://www.youtube.com/watch?v=cN8a5UozS5Q)
 
 ## Overview
 
