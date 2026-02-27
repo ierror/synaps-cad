@@ -1,7 +1,7 @@
 /// Application-level constants for developers.
 /// These are NOT user-facing settings — change them here in code.
 /// GitHub repository URL for issue reporting.
-pub const GITHUB_REPO_URL: &str = "https://github.com/boerni667/synapSCAD";
+pub const GITHUB_REPO_URL: &str = "https://github.com/ierror/synaps-cad";
 
 /// Maximum texture side length for egui (GPU limit).
 pub const MAX_TEXTURE_SIDE: u32 = 2048;
