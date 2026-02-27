@@ -16,12 +16,18 @@ The AI-powered 3D CAD IDE — edit code, visualize in 3D, and reshape your desig
 
 A desktop 3D CAD application that combines an OpenSCAD code editor, a real-time 3D viewport, and an AI assistant. Write OpenSCAD code, compile it to 3D models, visualize them interactively, and use AI to modify your designs through natural language — including context from 3D click interactions.
 
-## Prerequisites
+## Download
+
+Pre-built binaries for Linux, macOS (Apple Silicon & Intel), and Windows are available on the [Releases](https://github.com/ierror/synaps-cad/releases) page.
+
+## Building from Source
+
+### Prerequisites
 
 - **Rust** (stable toolchain)
 - An AI provider API key (e.g. `ANTHROPIC_API_KEY`) for the chat assistant
 
-## Quick Start
+### Quick Start
 
 ```sh
 cargo run
