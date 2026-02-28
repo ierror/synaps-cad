@@ -2,22 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.0] - 2026-02-27
+## [0.3.0] - 2026-02-28
 
-- Initial release
+### Added
 
-## [0.2.0] - 2026-06-27
+- Toggle part labels (@1, @2, ...) visibility with toolbar button or `L` key
+- Keyboard shortcuts cheatsheet dialog — open via toolbar `⌨` button or `?` key, close with `Esc`
+- UI settings persistence — label visibility is now remembered across sessions
+- Save-on-exit and immediate save on UI setting changes (no longer relying solely on 30-second auto-save)
 
-- First binary release with pre-built executables for Linux, macOS (Apple Silicon & Intel), and Windows
+### Changed
 
-## [0.2.1] - 2026-06-27
-
-- Fix: Updated README with correct release version and download instructions
-
-## [0.2.2] - 2026-06-27
-
-- Fix: Changed build target macos-13 to macos-latest
-
+- Persistence config now has a `ui` section for UI-related settings (backward compatible)
+- AGENTS.md updated with reminders to maintain keyboard shortcuts in both README and in-app cheatsheet
 
 ## [0.2.3] - 2026-02-28
 
@@ -35,3 +32,19 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - API keys entered via the UI were not used for fetching the model list (genai workaround)
+
+## [0.2.2] - 2026-06-27
+
+- Fix: Changed build target macos-13 to macos-latest
+
+## [0.2.1] - 2026-06-27
+
+- Fix: Updated README with correct release version and download instructions
+
+## [0.2.0] - 2026-06-27
+
+- First binary release with pre-built executables for Linux, macOS (Apple Silicon & Intel), and Windows
+
+## [0.1.0] - 2026-02-27
+
+- Initial release
