@@ -41,7 +41,7 @@ cargo run
 
 ### AI Provider Setup
 
-SynapsCAD uses the [genai](https://crates.io/crates/genai) crate to connect to AI providers. Set the API key for your chosen provider as an environment variable:
+SynapsCAD uses the [genai](https://crates.io/crates/genai) crate to connect to AI providers — including **local models via [Ollama](https://ollama.com)** for fully offline, private usage (no API key needed). Set the API key for your chosen cloud provider as an environment variable:
 
 | Provider  | Environment Variable |
 | --------- | -------------------- |
