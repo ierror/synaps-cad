@@ -671,12 +671,43 @@ fn ui_layout_system(
         }
 
         ui.horizontal_wrapped(|ui| {
-            if ui
-                .button("📎")
-                .on_hover_text("Attach image")
-                .clicked()
-                && file_picker.receiver.is_none()
-            {
+            let mut send_clicked = false;
+            let mut enter_pressed = false;
+            let mut attach_clicked = false;
+
+            let input_response = ui.horizontal_top(|ui| {
+                let available = ui.available_width();
+                let button_width = 60.0;
+
+                let resp = ui.add(
+                    egui::TextEdit::multiline(&mut chat_state.input_buffer)
+                        .hint_text("Ask the AI assistant...")
+                        .desired_width(available - button_width - 8.0)
+                        .desired_rows(3)
+                        .lock_focus(true),
+                );
+
+                ui.vertical(|ui| {
+                    if chat_state.is_streaming {
+                        if ui.button("⏹ Stop").clicked() {
+                            chat_state.is_streaming = false;
+                            chat_state.stream_receiver = None;
+                            chat_state.verification = super::ai_chat::VerificationState::Idle;
+                        }
+                    } else {
+                        send_clicked = ui.button("Send").clicked();
+                        enter_pressed = resp.has_focus()
+                            && ui.input(|i| {
+                                i.key_pressed(egui::Key::Enter) && !i.modifiers.shift
+                            });
+                    }
+                    attach_clicked = ui.button("📎").on_hover_text("Attach image").clicked();
+                });
+
+                resp
+            }).inner;
+
+            if attach_clicked && file_picker.receiver.is_none() {
                 let (tx, rx) = mpsc::channel();
                 file_picker.receiver = Some(Mutex::new(rx));
                 runtime.0.spawn(async move {
@@ -692,12 +723,6 @@ fn ui_layout_system(
                     let _ = tx.send(paths);
                 });
             }
-
-            let input_response = ui.add(
-                egui::TextEdit::singleline(&mut chat_state.input_buffer)
-                    .hint_text("Ask the AI assistant...")
-                    .desired_width(ui.available_width() - 60.0),
-            );
 
             // Arrow key history navigation when input is focused
             #[allow(clippy::assigning_clones)]
@@ -726,35 +751,27 @@ fn ui_layout_system(
                     }
             }
 
-            // Show Stop button while streaming, Send button otherwise
-            if chat_state.is_streaming {
-                if ui.button("⏹ Stop").clicked() {
-                    chat_state.is_streaming = false;
-                    chat_state.stream_receiver = None;
-                    chat_state.verification = super::ai_chat::VerificationState::Idle;
-                }
-            } else {
-                let send_clicked = ui.button("Send").clicked();
-                let enter_pressed = input_response.lost_focus()
-                    && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            // Strip trailing newline inserted by Enter key (we use Enter to send)
+            if enter_pressed {
+                chat_state.input_buffer = chat_state.input_buffer.trim_end_matches('\n').to_string();
+            }
 
-                if (send_clicked || enter_pressed)
-                    && !chat_state.input_buffer.trim().is_empty()
-                {
-                    let user_msg = chat_state.input_buffer.trim().to_string();
-                    let images = std::mem::take(&mut chat_state.pending_images);
-                    chat_state.input_history.push(user_msg.clone());
-                    chat_state.history_index = None;
-                    chat_state.messages.push(super::ai_chat::ChatMessage {
-                        role: "user".into(),
-                        content: user_msg,
-                        thinking: None,
-                        images,
-                        auto_generated: false,
-                    });
-                    chat_state.input_buffer.clear();
-                    chat_state.is_streaming = true;
-                }
+            if (send_clicked || enter_pressed)
+                && !chat_state.input_buffer.trim().is_empty()
+            {
+                let user_msg = chat_state.input_buffer.trim().to_string();
+                let images = std::mem::take(&mut chat_state.pending_images);
+                chat_state.input_history.push(user_msg.clone());
+                chat_state.history_index = None;
+                chat_state.messages.push(super::ai_chat::ChatMessage {
+                    role: "user".into(),
+                    content: user_msg,
+                    thinking: None,
+                    images,
+                    auto_generated: false,
+                });
+                chat_state.input_buffer.clear();
+                chat_state.is_streaming = true;
             }
         });
 
