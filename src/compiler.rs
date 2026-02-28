@@ -151,6 +151,8 @@ fn named_color(name: &str) -> Option<[f32; 3]> {
 enum Shape {
     Mesh3D(Box<BMesh<()>>),
     Sketch2D(Sketch<()>),
+    /// A boolean operation panicked — propagate failure to avoid cascading panics.
+    Failed(String),
 }
 
 impl fmt::Debug for Shape {
@@ -158,6 +160,7 @@ impl fmt::Debug for Shape {
         match self {
             Self::Mesh3D(_) => write!(f, "Shape::Mesh3D"),
             Self::Sketch2D(_) => write!(f, "Shape::Sketch2D"),
+            Self::Failed(e) => write!(f, "Shape::Failed({e})"),
         }
     }
 }
@@ -180,6 +183,7 @@ impl Shape {
         match self {
             Self::Mesh3D(b) => *b,
             Self::Sketch2D(s) => BMesh::from(s.extrude(0.01)),
+            Self::Failed(_) => BMesh::new(),
         }
     }
 
@@ -188,70 +192,69 @@ impl Shape {
         match self {
             Self::Mesh3D(b) => bmesh_to_csg_mesh(&b),
             Self::Sketch2D(s) => s.extrude(0.01),
+            Self::Failed(_) => CsgMesh::new(),
         }
     }
 
     fn union(self, other: Self) -> Self {
+        if let Self::Failed(e) = &self { return Self::Failed(e.clone()); }
+        if let Self::Failed(e) = &other { return Self::Failed(e.clone()); }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.union(&b)),
-            (a, b) => {
-                let a_bmesh = a.into_bmesh();
-                let b_bmesh = b.into_bmesh();
-                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    a_bmesh.union(&b_bmesh)
-                })) {
-                    Ok(r) => Self::Mesh3D(Box::new(r)),
-                    Err(_) => {
-                        eprintln!(
-                            "[SynapsCAD] Warning: boolean union panicked, keeping first operand"
-                        );
-                        Self::Mesh3D(Box::new(a_bmesh))
-                    }
-                }
-            }
+            (a, b) => Self::bool_op_with_fallback(a, b, BoolOp::Union),
         }
     }
 
     fn difference(self, other: Self) -> Self {
+        if let Self::Failed(e) = &self { return Self::Failed(e.clone()); }
+        if let Self::Failed(e) = &other { return Self::Failed(e.clone()); }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.difference(&b)),
-            (a, b) => {
-                let a_bmesh = a.into_bmesh();
-                let b_bmesh = b.into_bmesh();
-                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    a_bmesh.difference(&b_bmesh)
-                })) {
-                    Ok(r) => Self::Mesh3D(Box::new(r)),
-                    Err(_) => {
-                        eprintln!(
-                            "[SynapsCAD] Warning: boolean difference panicked, keeping first operand"
-                        );
-                        Self::Mesh3D(Box::new(a_bmesh))
-                    }
-                }
-            }
+            (a, b) => Self::bool_op_with_fallback(a, b, BoolOp::Difference),
         }
     }
 
     fn intersection(self, other: Self) -> Self {
+        if let Self::Failed(e) = &self { return Self::Failed(e.clone()); }
+        if let Self::Failed(e) = &other { return Self::Failed(e.clone()); }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.intersection(&b)),
-            (a, b) => {
-                let a_bmesh = a.into_bmesh();
-                let b_bmesh = b.into_bmesh();
-                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    a_bmesh.intersection(&b_bmesh)
-                })) {
-                    Ok(r) => Self::Mesh3D(Box::new(r)),
-                    Err(_) => {
-                        eprintln!(
-                            "[SynapsCAD] Warning: boolean intersection panicked, keeping first operand"
-                        );
-                        Self::Mesh3D(Box::new(a_bmesh))
-                    }
-                }
-            }
+            (a, b) => Self::bool_op_with_fallback(a, b, BoolOp::Intersection),
         }
+    }
+
+    /// Try boolmesh first; on panic, fall back to csgrs BSP-tree booleans.
+    fn bool_op_with_fallback(a: Self, b: Self, op: BoolOp) -> Self {
+        let a_csg = a.into_csg_mesh();
+        let b_csg = b.into_csg_mesh();
+
+        // Try boolmesh path: CsgMesh → BMesh → boolean → Shape
+        let a_bmesh = csg_mesh_to_bmesh(a_csg.clone());
+        let b_bmesh = csg_mesh_to_bmesh(b_csg.clone());
+
+        if let (Ok(ab), Ok(bb)) = (a_bmesh, b_bmesh) {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                match op {
+                    BoolOp::Union => ab.union(&bb),
+                    BoolOp::Difference => ab.difference(&bb),
+                    BoolOp::Intersection => ab.intersection(&bb),
+                }
+            }));
+            if let Ok(r) = result {
+                return Self::Mesh3D(Box::new(r));
+            }
+            eprintln!("[SynapsCAD] boolmesh {op:?} panicked, falling back to BSP");
+        } else {
+            eprintln!("[SynapsCAD] BMesh conversion failed, using BSP for {op:?}");
+        }
+
+        // Fallback: csgrs BSP-tree booleans
+        let result_csg = match op {
+            BoolOp::Union => a_csg.union(&b_csg),
+            BoolOp::Difference => a_csg.difference(&b_csg),
+            BoolOp::Intersection => a_csg.intersection(&b_csg),
+        };
+        Self::from_csg_mesh(result_csg)
     }
 
     fn translate(self, x: f64, y: f64, z: f64) -> Self {
@@ -264,6 +267,7 @@ impl Shape {
                     Self::from_csg_mesh(s.extrude(0.01).translate(x, y, z))
                 }
             }
+            Self::Failed(e) => Self::Failed(e),
         }
     }
 
@@ -277,6 +281,7 @@ impl Shape {
                     Self::from_csg_mesh(s.extrude(0.01).rotate(x, y, z))
                 }
             }
+            Self::Failed(e) => Self::Failed(e),
         }
     }
 
@@ -290,6 +295,7 @@ impl Shape {
                     Self::from_csg_mesh(s.extrude(0.01).scale(sx, sy, sz))
                 }
             }
+            Self::Failed(e) => Self::Failed(e),
         }
     }
 
@@ -302,6 +308,7 @@ impl Shape {
         match self {
             Self::Mesh3D(m) => Self::Mesh3D(Box::new(m.mirror(plane))),
             Self::Sketch2D(s) => Self::Sketch2D(s.mirror(plane)),
+            Self::Failed(e) => Self::Failed(e),
         }
     }
 
@@ -310,6 +317,7 @@ impl Shape {
         match self {
             Self::Mesh3D(m) => Self::Mesh3D(Box::new(m.center())),
             Self::Sketch2D(s) => Self::Sketch2D(s.center()),
+            Self::Failed(e) => Self::Failed(e),
         }
     }
 }
@@ -336,6 +344,10 @@ pub fn compile_scad_code(code: &str) -> CompilationResult {
         let mut warnings = evaluator.warnings;
         let mut parts = Vec::new();
         for (i, (shape, color)) in shapes.into_iter().enumerate() {
+            if let Shape::Failed(e) = &shape {
+                warnings.push(format!("Part {}: {e}. This is a bug in a dependency — please report it with your code.", i + 1));
+                continue;
+            }
             match bmesh_to_mesh_data(&shape.into_bmesh()) {
                 Ok(mut data) => {
                     data.color = color;
@@ -1934,6 +1946,9 @@ impl Evaluator {
                 Shape::Mesh3D(_) => {
                     self.warnings
                         .push("3D mesh child inside extrude, skipping".into());
+                }
+                Shape::Failed(e) => {
+                    self.warnings.push(format!("Failed child inside extrude: {e}"));
                 }
             }
         }

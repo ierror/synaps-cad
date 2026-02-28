@@ -113,6 +113,8 @@ pub struct AvailableModels {
     pub error: Option<String>,
     /// Set to true when the persisted model is no longer available.
     pub needs_configuration: bool,
+    /// Saved model name to restore after model list is fetched.
+    pub pending_model: Option<String>,
     #[allow(clippy::type_complexity)]
     pub receiver: Option<Mutex<mpsc::Receiver<Result<Vec<String>, String>>>>,
 }
@@ -231,9 +233,15 @@ fn fetch_models_system(
             match result {
                 Ok(models) => {
                     available.error = None;
-                    // Only flag reconfiguration when switching adapters and
-                    // the persisted model doesn't match ANY known model.
-                    if !ai_config.model_name.is_empty()
+                    // Restore pending model if it's in the fetched list
+                    if let Some(pending) = available.pending_model.take() {
+                        if models.contains(&pending) {
+                            ai_config.model_name = pending;
+                            available.needs_configuration = false;
+                        } else {
+                            available.needs_configuration = true;
+                        }
+                    } else if !ai_config.model_name.is_empty()
                         && !models.contains(&ai_config.model_name)
                         && available.last_adapter != ai_config.adapter_name
                     {
@@ -259,6 +267,10 @@ fn fetch_models_system(
     if (available.last_adapter != ai_config.adapter_name || key_changed) && !available.loading {
         // Clear stale models immediately so the UI doesn't show old data
         available.models.clear();
+        // Save current model name to restore after fetch if it's still valid
+        if !ai_config.model_name.is_empty() {
+            available.pending_model = Some(ai_config.model_name.clone());
+        }
         ai_config.model_name.clear();
         available.last_adapter.clone_from(&ai_config.adapter_name);
         available.last_api_key.clone_from(&ai_config.api_key);
@@ -477,6 +489,29 @@ async fn run_ai_stream(
         }
         let view_msg = GenaiMessage::user(MessageContent::from_parts(parts));
         chat_req = chat_req.append_message(view_msg);
+
+        // In debug mode, save orthographic views to var/tmp/ for inspection
+        if cfg!(debug_assertions) {
+            use base64::Engine;
+            let tmp_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("var/tmp");
+            if let Err(e) = std::fs::create_dir_all(&tmp_dir) {
+                eprintln!("[DEBUG] Failed to create {}: {e}", tmp_dir.display());
+            }
+            for (label, base64_png) in views {
+                if !base64_png.is_empty() {
+                    match base64::engine::general_purpose::STANDARD.decode(base64_png) {
+                        Ok(bytes) => {
+                            let path = tmp_dir.join(format!("{label}_view.png"));
+                            match std::fs::write(&path, &bytes) {
+                                Ok(()) => eprintln!("[DEBUG] Saved view image: {}", path.display()),
+                                Err(e) => eprintln!("[DEBUG] Failed to write {}: {e}", path.display()),
+                            }
+                        }
+                        Err(e) => eprintln!("[DEBUG] Failed to decode {label} base64: {e}"),
+                    }
+                }
+            }
+        }
     }
 
     // Attach user-provided reference images
