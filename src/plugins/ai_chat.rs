@@ -27,13 +27,24 @@ Always verify your results after making changes with the given 3D context \
 information (orthographic views, bounding boxes, part counts). \
 If something is unclear, ask clarifying questions before making changes. \
 If something looks wrong in the rendered views, suggest corrections.\n\
+In verification rounds, carefully compare the rendered views against the user's request. \
 \n\
 ## Part Colors\n\
 Use `color()` to give each part a realistic, semantically meaningful color. \
 For example: green for plants/leaves, brown for wood/soil, red for flowers, \
 gray for metal/concrete, blue for water, white for snow, orange for flames. \
 Always pick colors that match the real-world material or object being modeled. \
-Example: `color(\"green\") cylinder(h = 20, r = 3);` for a plant stem.";
+Example: `color(\"green\") cylinder(h = 20, r = 3);` for a plant stem.\n\
+\n\
+## Physical Realism\n\
+When generating 3D models, consider real-world physics and functionality. \
+Objects should be structurally plausible and functionally correct:\n\
+- A pipe must be a hollow cylinder (`difference()` of two cylinders), not a solid rod.\n\
+- A cup needs an interior cavity so it can hold liquid.\n\
+- A wheel should have an axle hole.\n\
+- Load-bearing structures (bridges, shelves) need appropriate thickness and supports.\n\
+- Moving parts (hinges, gears) need clearance gaps between components.\n\
+Think about what the object does in the real world and ensure the geometry reflects that.";
 
 /// Supported AI provider adapters.
 pub const ADAPTER_NAMES: &[&str] = &[
