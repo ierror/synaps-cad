@@ -134,6 +134,7 @@ zoom_to_fit_system         — auto-frame model after compilation
 | -------------------- | ----- |
 | **Toggle gizmos**    | `G`   |
 | **Toggle labels**    | `L`   |
+| **Keyboard shortcuts** | `?` |
 
 ## 3D Viewport Navigation
 

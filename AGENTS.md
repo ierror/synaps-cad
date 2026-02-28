@@ -173,3 +173,5 @@ Example: `color("green") cylinder(h = 20, r = 3);` for a plant stem.
 **Keep `AGENTS.md` up to date.** When making architecture-relevant changes — new plugins, new resources/components, changed data flow, new UI patterns, or new conventions — update this file so that AI agents always have accurate context about the codebase.
 
 **Keep `README.md` keyboard shortcuts table up to date.** When adding or changing keyboard shortcuts (in `camera.rs` or elsewhere), update the "Keyboard Shortcuts" and "3D Viewport Navigation" sections in `README.md` to match.
+
+**Keep the in-app keyboard cheatsheet up to date.** The `cheatsheet_system` in `ui.rs` contains a `shortcuts` array listing all keyboard shortcuts shown to the user. When adding or changing shortcuts, update that array alongside the `README.md` tables.

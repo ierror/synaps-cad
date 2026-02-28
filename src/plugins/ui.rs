@@ -44,6 +44,9 @@ impl Default for SettingsDialogOpen {
     }
 }
 
+#[derive(Resource, Default)]
+struct CheatsheetOpen(bool);
+
 /// Non-fatal errors shown in the UI instead of panicking.
 #[derive(Resource, Default)]
 pub struct AppErrors {
@@ -99,6 +102,7 @@ impl Plugin for UiPlugin {
             .init_resource::<ImagePreviewState>()
             .init_resource::<AppErrors>()
             .init_resource::<SettingsDialogOpen>()
+            .init_resource::<CheatsheetOpen>()
             .init_resource::<ExportState>()
             .init_resource::<SplashScreen>()
             .add_systems(Startup, setup_egui_theme)
@@ -111,6 +115,7 @@ impl Plugin for UiPlugin {
                     poll_file_picker_system,
                     poll_export_system,
                     viewport_toolbar_system,
+                    cheatsheet_system,
                     draw_part_labels,
                     file_drop_system,
                 ),
@@ -1211,6 +1216,7 @@ fn viewport_toolbar_system(
     mut orbit: ResMut<OrbitCamera>,
     mut ruler: ResMut<super::camera::RulerState>,
     mut label_vis: ResMut<LabelVisibility>,
+    mut cheatsheet: ResMut<CheatsheetOpen>,
 ) {
     let Some(ctx) = contexts.try_ctx_mut() else {
         return;
@@ -1339,6 +1345,15 @@ fn viewport_toolbar_system(
                             .clicked()
                         {
                             label_vis.visible = !label_vis.visible;
+                        }
+
+                        // --- Keyboard cheatsheet ---
+                        if ui
+                            .selectable_label(cheatsheet.0, "⌨")
+                            .on_hover_text("Keyboard shortcuts (?)")
+                            .clicked()
+                        {
+                            cheatsheet.0 = !cheatsheet.0;
                         }
                     });
                 });
@@ -1481,6 +1496,75 @@ fn load_image_as_chat_image(path: &std::path::Path) -> Option<super::ai_chat::Ch
         mime_type: mime_type.to_string(),
         base64_data,
     })
+}
+
+fn cheatsheet_system(
+    mut contexts: EguiContexts,
+    mut cheatsheet: ResMut<CheatsheetOpen>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    let Some(ctx) = contexts.try_ctx_mut() else {
+        return;
+    };
+
+    // Toggle with ? key (Slash + Shift) when not typing
+    if !ctx.wants_keyboard_input()
+        && keyboard.pressed(KeyCode::ShiftLeft)
+        && keyboard.just_pressed(KeyCode::Slash)
+    {
+        cheatsheet.0 = !cheatsheet.0;
+    }
+
+    if !cheatsheet.0 {
+        return;
+    }
+
+    // Close on Esc
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        cheatsheet.0 = false;
+        return;
+    }
+
+    egui::Window::new("⌨ Keyboard Shortcuts")
+        .open(&mut cheatsheet.0)
+        .resizable(false)
+        .collapsible(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Grid::new("cheatsheet_grid")
+                .num_columns(2)
+                .spacing([24.0, 6.0])
+                .show(ui, |ui| {
+                    let shortcuts: &[(&str, &str)] = &[
+                        // Navigation
+                        ("Orbit", "MMB drag / RMB drag"),
+                        ("Pan", "Shift + MMB drag"),
+                        ("Zoom", "Scroll / + / −"),
+                        ("Move focus", "W A S D / Arrow keys"),
+                        // Views
+                        ("Front view", "1"),
+                        ("Back view", "2"),
+                        ("Right view", "3"),
+                        ("Left view", "4"),
+                        ("Top view", "5"),
+                        ("Bottom view", "6"),
+                        ("Isometric view", "7"),
+                        // Toggles
+                        ("Toggle gizmos", "G"),
+                        ("Toggle labels", "L"),
+                        ("Keyboard shortcuts", "?"),
+                        // Tools
+                        ("Cancel ruler", "Esc"),
+                    ];
+
+                    for (action, key) in shortcuts {
+                        ui.label(*action);
+                        ui.strong(*key);
+                        ui.end_row();
+                    }
+                });
+        });
 }
 
 fn draw_part_labels(
