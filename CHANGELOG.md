@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - Compact icon-only Send (⬆), Stop (⏹), and Attach (📎) buttons
 - Chat auto-scrolls to latest streaming content
 - Debug mode: orthographic view images saved to `var/tmp/` for inspection
+- App icon for macOS (.app bundle with .icns) and Windows (embedded .ico)
 
 ### Fixed
 

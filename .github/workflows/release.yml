@@ -59,8 +59,20 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Package (Unix)
-        if: runner.os != 'Windows'
+      - name: Package (macOS .app bundle)
+        if: runner.os == 'macOS'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          APP="SynapsCAD.app"
+          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/Resources"
+          cp target/${{ matrix.target }}/release/synaps-cad "$APP/Contents/MacOS/"
+          cp assets/icon.icns "$APP/Contents/Resources/icon.icns"
+          sed "s/0\.4\.0/$VERSION/g" assets/macos/Info.plist > "$APP/Contents/Info.plist"
+          tar czf ${{ matrix.artifact }} "$APP"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
         run: |
           cd target/${{ matrix.target }}/release
           tar czf ../../../${{ matrix.artifact }} synaps-cad
