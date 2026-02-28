@@ -24,10 +24,12 @@ struct SerializableImage {
 struct SerializableChatMessage {
     role: String,
     content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     thinking: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     images: Vec<SerializableImage>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    auto_generated: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -80,7 +82,7 @@ fn session_path() -> Option<PathBuf> {
 impl Plugin for PersistencePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, load_session_system)
-            .add_systems(Update, (auto_save_system, save_on_exit_system, save_on_ui_change_system));
+            .add_systems(Update, (auto_save_system, save_on_exit_system, save_on_change_system));
     }
 }
 
@@ -131,7 +133,16 @@ fn load_session_system(
                     base64_data: i.base64_data,
                 })
                 .collect(),
+            auto_generated: m.auto_generated,
         })
+        .collect();
+
+    // Rebuild input history from restored user messages (exclude auto-generated ones)
+    chat_state.input_history = chat_state
+        .messages
+        .iter()
+        .filter(|m| m.role == "user" && !m.auto_generated)
+        .map(|m| m.content.clone())
         .collect();
 
     // Backward compat: if old multi-part data exists, merge into single buffer
@@ -158,7 +169,7 @@ struct AutoSaveTimer(Timer);
 
 impl Default for AutoSaveTimer {
     fn default() -> Self {
-        Self(Timer::from_seconds(30.0, TimerMode::Repeating))
+        Self(Timer::from_seconds(5.0, TimerMode::Repeating))
     }
 }
 
@@ -190,15 +201,26 @@ fn save_on_exit_system(
     }
 }
 
-/// Save immediately when UI settings (like label visibility) change.
-fn save_on_ui_change_system(
+/// Save soon after chat or UI settings change (debounced to avoid excessive I/O during streaming).
+fn save_on_change_system(
+    time: Res<Time>,
+    mut debounce: Local<Option<f32>>,
     label_vis: Res<LabelVisibility>,
-    ai_config: Res<AiConfig>,
     chat_state: Res<ChatState>,
+    ai_config: Res<AiConfig>,
     scad_code: Res<ScadCode>,
 ) {
-    if label_vis.is_changed() && !label_vis.is_added() {
-        save_session(&ai_config, &chat_state, &scad_code, &label_vis);
+    let changed = (label_vis.is_changed() && !label_vis.is_added())
+        || (chat_state.is_changed() && !chat_state.is_added());
+    if changed {
+        *debounce = Some(2.0); // save 2 seconds after last change
+    }
+    if let Some(ref mut remaining) = *debounce {
+        *remaining -= time.delta_secs();
+        if *remaining <= 0.0 {
+            *debounce = None;
+            save_session(&ai_config, &chat_state, &scad_code, &label_vis);
+        }
     }
 }
 
@@ -237,6 +259,7 @@ fn save_session(ai_config: &AiConfig, chat_state: &ChatState, scad_code: &ScadCo
                         base64_data: i.base64_data.clone(),
                     })
                     .collect(),
+                auto_generated: m.auto_generated,
             })
             .collect(),
         adapter_name: ai_config.adapter_name.clone(),

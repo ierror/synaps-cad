@@ -133,6 +133,8 @@ pub struct ChatMessage {
     pub thinking: Option<String>,
     /// Images attached to this message.
     pub images: Vec<ChatImage>,
+    /// True for messages generated automatically (e.g. verification rounds), not typed by user.
+    pub auto_generated: bool,
 }
 
 #[derive(Debug)]
@@ -518,6 +520,7 @@ fn ai_receive_system(
                 content: content.clone(),
                 thinking: reasoning,
                 images: Vec::new(),
+                auto_generated: false,
             });
             chat_state.is_streaming = false;
             chat_state.stream_receiver = None;
@@ -548,6 +551,7 @@ fn ai_receive_system(
                 content: err,
                 thinking: None,
                 images: Vec::new(),
+                auto_generated: false,
             });
             chat_state.is_streaming = false;
             chat_state.stream_receiver = None;
@@ -575,8 +579,8 @@ fn ai_verify_system(
                 .messages
                 .iter()
                 .rev()
-                .take_while(|m| m.role != "user" || m.content.starts_with("[Verification"))
-                .filter(|m| m.content.starts_with("[Verification"))
+                .take_while(|m| m.role != "user" || m.auto_generated)
+                .filter(|m| m.role == "user" && m.auto_generated)
                 .count() as u32
                 + 1;
 
@@ -592,6 +596,7 @@ fn ai_verify_system(
                 content: format!("[Verification round {round}/{max_label}] {VERIFICATION_PROMPT}"),
                 thinking: None,
                 images: Vec::new(),
+                auto_generated: true,
             });
 
             // Trigger the AI send

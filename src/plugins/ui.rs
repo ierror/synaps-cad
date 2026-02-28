@@ -750,6 +750,7 @@ fn ui_layout_system(
                         content: user_msg,
                         thinking: None,
                         images,
+                        auto_generated: false,
                     });
                     chat_state.input_buffer.clear();
                     chat_state.is_streaming = true;
@@ -816,7 +817,8 @@ fn ui_layout_system(
                     };
 
                     let id = ui.make_persistent_id(format!("chat_msg_{msg_idx}"));
-                    let default_open = !is_user;
+                    // Most recent message always open; older user messages collapsed
+                    let default_open = rev_i == 0 || !is_user;
                     let state = egui::collapsing_header::CollapsingState::load_with_default_open(
                         ui.ctx(),
                         id,

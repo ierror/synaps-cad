@@ -280,6 +280,7 @@ fn poll_compilation_system(
                     content: warning_text,
                     thinking: None,
                     images: Vec::new(),
+                    auto_generated: true,
                 });
             }
 
@@ -340,6 +341,7 @@ fn poll_compilation_system(
                 content: user_msg,
                 thinking: None,
                 images: Vec::new(),
+                auto_generated: true,
             });
         }
     }
