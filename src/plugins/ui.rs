@@ -689,13 +689,13 @@ fn ui_layout_system(
 
                 ui.vertical(|ui| {
                     if chat_state.is_streaming {
-                        if ui.button("⏹ Stop").clicked() {
+                        if ui.button("⏹").on_hover_text("Stop").clicked() {
                             chat_state.is_streaming = false;
                             chat_state.stream_receiver = None;
                             chat_state.verification = super::ai_chat::VerificationState::Idle;
                         }
                     } else {
-                        send_clicked = ui.button("Send").clicked();
+                        send_clicked = ui.button("⬆").on_hover_text("Send").clicked();
                         enter_pressed = resp.has_focus()
                             && ui.input(|i| {
                                 i.key_pressed(egui::Key::Enter) && !i.modifiers.shift
@@ -769,8 +769,8 @@ fn ui_layout_system(
                     thinking: None,
                     images,
                     auto_generated: false,
-                });
-                chat_state.input_buffer.clear();
+                    is_error: false,
+                });                chat_state.input_buffer.clear();
                 chat_state.is_streaming = true;
             }
         });
@@ -820,6 +820,8 @@ fn ui_layout_system(
                     let is_user = msg.role == "user";
                     let (prefix, color) = if is_user {
                         ("You", egui::Color32::from_rgb(100, 160, 255))
+                    } else if msg.is_error {
+                        ("⚠", egui::Color32::from_rgb(255, 100, 100))
                     } else {
                         ("AI", egui::Color32::from_rgb(130, 220, 130))
                     };
@@ -862,7 +864,14 @@ fn ui_layout_system(
                                 );
                             }
                             ui.horizontal_wrapped(|ui| {
-                                ui.label(&msg.content);
+                                if msg.is_error {
+                                    ui.label(
+                                        egui::RichText::new(&msg.content)
+                                            .color(egui::Color32::from_rgb(255, 120, 120)),
+                                    );
+                                } else {
+                                    ui.label(&msg.content);
+                                }
                             });
                             if !msg.images.is_empty() {
                                 for img in &msg.images {

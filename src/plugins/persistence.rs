@@ -30,6 +30,8 @@ struct SerializableChatMessage {
     images: Vec<SerializableImage>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     auto_generated: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    is_error: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -134,6 +136,7 @@ fn load_session_system(
                 })
                 .collect(),
             auto_generated: m.auto_generated,
+            is_error: m.is_error,
         })
         .collect();
 
@@ -260,6 +263,7 @@ fn save_session(ai_config: &AiConfig, chat_state: &ChatState, scad_code: &ScadCo
                     })
                     .collect(),
                 auto_generated: m.auto_generated,
+                is_error: m.is_error,
             })
             .collect(),
         adapter_name: ai_config.adapter_name.clone(),

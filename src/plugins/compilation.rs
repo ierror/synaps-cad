@@ -281,6 +281,7 @@ fn poll_compilation_system(
                     thinking: None,
                     images: Vec::new(),
                     auto_generated: true,
+                    is_error: true,
                 });
             }
 
@@ -342,6 +343,7 @@ fn poll_compilation_system(
                 thinking: None,
                 images: Vec::new(),
                 auto_generated: true,
+                is_error: true,
             });
         }
     }

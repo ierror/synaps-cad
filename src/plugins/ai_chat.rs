@@ -135,6 +135,8 @@ pub struct ChatMessage {
     pub images: Vec<ChatImage>,
     /// True for messages generated automatically (e.g. verification rounds), not typed by user.
     pub auto_generated: bool,
+    /// True for error messages (compilation errors, internal errors).
+    pub is_error: bool,
 }
 
 #[derive(Debug)]
@@ -552,6 +554,7 @@ fn ai_receive_system(
                 thinking: reasoning,
                 images: Vec::new(),
                 auto_generated: false,
+                is_error: false,
             });
             chat_state.is_streaming = false;
             chat_state.stream_receiver = None;
@@ -577,12 +580,23 @@ fn ai_receive_system(
             }
         }
         AiStreamChunk::Error(err) => {
+            // Restore the user's last message back to input so they can retry
+            if let Some(last_user_msg) = chat_state
+                .messages
+                .iter()
+                .rposition(|m| m.role == "user" && !m.auto_generated)
+            {
+                let msg = chat_state.messages.remove(last_user_msg);
+                chat_state.input_buffer = msg.content;
+                chat_state.pending_images = msg.images;
+            }
             chat_state.messages.push(ChatMessage {
                 role: "assistant".into(),
                 content: err,
                 thinking: None,
                 images: Vec::new(),
                 auto_generated: false,
+                is_error: true,
             });
             chat_state.is_streaming = false;
             chat_state.stream_receiver = None;
@@ -628,6 +642,7 @@ fn ai_verify_system(
                 thinking: None,
                 images: Vec::new(),
                 auto_generated: true,
+                is_error: false,
             });
 
             // Trigger the AI send
