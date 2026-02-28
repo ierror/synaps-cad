@@ -141,6 +141,11 @@ pub struct ChatMessage {
 
 #[derive(Debug)]
 pub enum AiStreamChunk {
+    /// Incremental text content chunk.
+    Chunk(String),
+    /// Incremental reasoning/thinking chunk.
+    ReasoningChunk(String),
+    /// Stream finished — final content and reasoning are built from chunks.
     Done {
         content: String,
         reasoning: Option<String>,
@@ -410,7 +415,8 @@ async fn run_ai_stream(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use genai::Client;
     use genai::chat::{
-        ChatMessage as GenaiMessage, ChatOptions, ChatRequest, ContentPart, MessageContent,
+        ChatMessage as GenaiMessage, ChatOptions, ChatRequest, ChatStreamEvent, ContentPart,
+        MessageContent,
     };
     use genai::resolver::AuthData;
 
@@ -498,24 +504,59 @@ async fn run_ai_stream(
         ));
     }
 
-    let chat_options = ChatOptions::default().with_temperature(temperature);
-    let response = client
-        .exec_chat(model_name, chat_req, Some(&chat_options))
+    let chat_options = ChatOptions::default()
+        .with_temperature(temperature)
+        .with_capture_content(true)
+        .with_capture_reasoning_content(true);
+    let stream_response = client
+        .exec_chat_stream(model_name, chat_req, Some(&chat_options))
         .await?;
 
-    let content = response.first_text().unwrap_or("(no response)").to_string();
+    let mut stream = std::pin::pin!(stream_response.stream);
+    let mut full_content = String::new();
+    let mut full_reasoning: Option<String> = None;
 
-    let reasoning = response.reasoning_content;
+    use bevy::tasks::futures_lite::StreamExt;
+    while let Some(event) = stream.next().await {
+        match event {
+            Ok(ChatStreamEvent::Chunk(chunk)) => {
+                full_content.push_str(&chunk.content);
+                let _ = tx.send(AiStreamChunk::Chunk(chunk.content));
+            }
+            Ok(ChatStreamEvent::ReasoningChunk(chunk)) => {
+                full_reasoning
+                    .get_or_insert_with(String::new)
+                    .push_str(&chunk.content);
+                let _ = tx.send(AiStreamChunk::ReasoningChunk(chunk.content));
+            }
+            Ok(ChatStreamEvent::End(_)) => {
+                break;
+            }
+            Ok(_) => {} // Start, ThoughtSignatureChunk, ToolCallChunk
+            Err(e) => {
+                let err_msg = format!("{e}");
+                let _ = tx.send(AiStreamChunk::Error(err_msg));
+                return Ok(());
+            }
+        }
+    }
+
+    if full_content.is_empty() {
+        full_content = "(no response)".to_string();
+    }
 
     if cfg!(debug_assertions) {
-        let preview: String = content.chars().take(500).collect();
-        eprintln!("[DEBUG] AI response ({} chars): {preview}", content.len());
-        if let Some(ref r) = reasoning {
+        let preview: String = full_content.chars().take(500).collect();
+        eprintln!("[DEBUG] AI response ({} chars): {preview}", full_content.len());
+        if let Some(ref r) = full_reasoning {
             eprintln!("[DEBUG] AI reasoning ({} chars)", r.len());
         }
     }
 
-    let _ = tx.send(AiStreamChunk::Done { content, reasoning });
+    let _ = tx.send(AiStreamChunk::Done {
+        content: full_content,
+        reasoning: full_reasoning,
+    });
 
     Ok(())
 }
@@ -529,77 +570,140 @@ fn ai_receive_system(
         return;
     }
 
-    let chunk = {
+    // Drain all available chunks from the channel
+    let chunks: Vec<AiStreamChunk> = {
         let Some(ref rx_mutex) = chat_state.stream_receiver else {
             return;
         };
         let rx = rx_mutex.lock().unwrap();
-        match rx.try_recv() {
-            Ok(c) => c,
-            Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => {
-                drop(rx);
+        let mut chunks = Vec::new();
+        loop {
+            match rx.try_recv() {
+                Ok(c) => chunks.push(c),
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    if chunks.is_empty() {
+                        drop(rx);
+                        chat_state.is_streaming = false;
+                        chat_state.stream_receiver = None;
+                        return;
+                    }
+                    break;
+                }
+            }
+        }
+        chunks
+    };
+
+    for chunk in chunks {
+        match chunk {
+            AiStreamChunk::Chunk(text) => {
+                // Append to the live assistant message (create if needed)
+                let append = chat_state
+                    .messages
+                    .last()
+                    .is_some_and(|m| m.role == "assistant" && !m.is_error);
+                if append {
+                    chat_state.messages.last_mut().unwrap().content.push_str(&text);
+                } else {
+                    chat_state.messages.push(ChatMessage {
+                        role: "assistant".into(),
+                        content: text,
+                        thinking: None,
+                        images: Vec::new(),
+                        auto_generated: false,
+                        is_error: false,
+                    });
+                }
+            }
+            AiStreamChunk::ReasoningChunk(text) => {
+                let append = chat_state
+                    .messages
+                    .last()
+                    .is_some_and(|m| m.role == "assistant" && !m.is_error);
+                if append {
+                    chat_state
+                        .messages
+                        .last_mut()
+                        .unwrap()
+                        .thinking
+                        .get_or_insert_with(String::new)
+                        .push_str(&text);
+                } else {
+                    chat_state.messages.push(ChatMessage {
+                        role: "assistant".into(),
+                        content: String::new(),
+                        thinking: Some(text),
+                        images: Vec::new(),
+                        auto_generated: false,
+                        is_error: false,
+                    });
+                }
+            }
+            AiStreamChunk::Done { content, reasoning } => {
+                // Replace the live message with the final version
+                let replace = chat_state
+                    .messages
+                    .last()
+                    .is_some_and(|m| m.role == "assistant" && !m.is_error);
+                if replace {
+                    let last = chat_state.messages.last_mut().unwrap();
+                    last.content = content.clone();
+                    last.thinking = reasoning;
+                }
+                chat_state.is_streaming = false;
+                chat_state.stream_receiver = None;
+
+                if let Some(new_code) = extract_openscad_code(&content) {
+                    scad_code.text = new_code;
+                    scad_code.dirty = true;
+
+                    let round = match &chat_state.verification {
+                        VerificationState::Verifying(n) => *n,
+                        _ => 0,
+                    };
+
+                    if round < ai_config.max_verification_rounds {
+                        chat_state.verification = VerificationState::WaitingForCompilation;
+                    } else {
+                        chat_state.verification = VerificationState::Idle;
+                    }
+                } else {
+                    chat_state.verification = VerificationState::Idle;
+                }
+                return;
+            }
+            AiStreamChunk::Error(err) => {
+                // Remove partial streaming message if present
+                if chat_state
+                    .messages
+                    .last()
+                    .is_some_and(|m| m.role == "assistant" && !m.is_error)
+                {
+                    chat_state.messages.pop();
+                }
+                // Restore the user's last message back to input so they can retry
+                if let Some(last_user_msg) = chat_state
+                    .messages
+                    .iter()
+                    .rposition(|m| m.role == "user" && !m.auto_generated)
+                {
+                    let msg = chat_state.messages.remove(last_user_msg);
+                    chat_state.input_buffer = msg.content;
+                    chat_state.pending_images = msg.images;
+                }
+                chat_state.messages.push(ChatMessage {
+                    role: "assistant".into(),
+                    content: err,
+                    thinking: None,
+                    images: Vec::new(),
+                    auto_generated: false,
+                    is_error: true,
+                });
                 chat_state.is_streaming = false;
                 chat_state.stream_receiver = None;
                 return;
             }
-        }
-    };
-
-    match chunk {
-        AiStreamChunk::Done { content, reasoning } => {
-            chat_state.messages.push(ChatMessage {
-                role: "assistant".into(),
-                content: content.clone(),
-                thinking: reasoning,
-                images: Vec::new(),
-                auto_generated: false,
-                is_error: false,
-            });
-            chat_state.is_streaming = false;
-            chat_state.stream_receiver = None;
-
-            if let Some(new_code) = extract_openscad_code(&content) {
-                scad_code.text = new_code;
-                scad_code.dirty = true;
-
-                // Figure out which verification round we're on
-                let round = match &chat_state.verification {
-                    VerificationState::Verifying(n) => *n,
-                    _ => 0,
-                };
-
-                if round < ai_config.max_verification_rounds {
-                    chat_state.verification = VerificationState::WaitingForCompilation;
-                } else {
-                    chat_state.verification = VerificationState::Idle;
-                }
-            } else {
-                // AI didn't produce code — verification loop is done
-                chat_state.verification = VerificationState::Idle;
-            }
-        }
-        AiStreamChunk::Error(err) => {
-            // Restore the user's last message back to input so they can retry
-            if let Some(last_user_msg) = chat_state
-                .messages
-                .iter()
-                .rposition(|m| m.role == "user" && !m.auto_generated)
-            {
-                let msg = chat_state.messages.remove(last_user_msg);
-                chat_state.input_buffer = msg.content;
-                chat_state.pending_images = msg.images;
-            }
-            chat_state.messages.push(ChatMessage {
-                role: "assistant".into(),
-                content: err,
-                thinking: None,
-                images: Vec::new(),
-                auto_generated: false,
-                is_error: true,
-            });
-            chat_state.is_streaming = false;
-            chat_state.stream_receiver = None;
         }
     }
 }

@@ -836,8 +836,13 @@ fn ui_layout_system(
                     };
 
                     let id = ui.make_persistent_id(format!("chat_msg_{msg_idx}"));
-                    // Most recent message always open; older user messages collapsed
-                    let default_open = rev_i == 0 || !is_user;
+                    // Most recent message always open; errors open; older user messages collapsed
+                    // During streaming, only keep the active (first) message open to avoid flicker
+                    let default_open = if chat_state.is_streaming {
+                        rev_i == 0
+                    } else {
+                        rev_i == 0 || !is_user || msg.is_error
+                    };
                     let state = egui::collapsing_header::CollapsingState::load_with_default_open(
                         ui.ctx(),
                         id,
@@ -864,13 +869,17 @@ fn ui_layout_system(
                                 );
                             }
                             ui.horizontal_wrapped(|ui| {
-                                if msg.is_error {
+                                let label_resp = if msg.is_error {
                                     ui.label(
                                         egui::RichText::new(&msg.content)
                                             .color(egui::Color32::from_rgb(255, 120, 120)),
-                                    );
+                                    )
                                 } else {
-                                    ui.label(&msg.content);
+                                    ui.label(&msg.content)
+                                };
+                                // Auto-scroll to keep the latest streaming text visible
+                                if chat_state.is_streaming && rev_i == 0 {
+                                    label_resp.scroll_to_me(Some(egui::Align::BOTTOM));
                                 }
                             });
                             if !msg.images.is_empty() {
