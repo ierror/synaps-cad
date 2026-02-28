@@ -283,8 +283,7 @@ fn splash_screen_system(
         .order(egui::Order::Tooltip)
         .interactable(false)
         .show(ctx, |ui| {
-            let painter = ui.painter();
-            painter.rect_filled(
+            ui.painter().rect_filled(
                 screen_rect,
                 0.0,
                 egui::Color32::from_rgba_premultiplied(24, 24, 36, bg_alpha),
@@ -298,18 +297,19 @@ fn splash_screen_system(
             let img_rect = egui::Rect::from_center_size(screen_rect.center(), img_size);
 
             let tint = egui::Color32::from_rgba_unmultiplied(255, 255, 255, (alpha * 255.0) as u8);
-            painter.image(
-                texture.id(),
+            let rounding = egui::CornerRadius::same(16);
+            ui.put(
                 img_rect,
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                tint,
+                egui::Image::new(egui::load::SizedTexture::new(texture.id(), img_size))
+                    .tint(tint)
+                    .corner_radius(rounding),
             );
 
             // App name below image
             let text_pos = egui::pos2(screen_rect.center().x, img_rect.max.y + 20.0);
             let text_color =
                 egui::Color32::from_rgba_unmultiplied(220, 220, 230, (alpha * 255.0) as u8);
-            painter.text(
+            ui.painter().text(
                 text_pos,
                 egui::Align2::CENTER_TOP,
                 format!("SynapsCAD v{}", env!("CARGO_PKG_VERSION")),
