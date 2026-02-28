@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-02-28
+
+### Added
+
+- AI response streaming — see model output as it's generated, including live thinking/reasoning display
+- Multiline chat input (3 rows) with word wrap; Enter sends, Shift+Enter inserts newline
+- Compilation errors and warnings highlighted in red (⚠) in chat
+- Compact icon-only Send (⬆), Stop (⏹), and Attach (📎) buttons
+- Chat auto-scrolls to latest streaming content
+- Debug mode: orthographic view images saved to `var/tmp/` for inspection
+
+### Fixed
+
+- `intersection_for` now correctly intersects all iteration results (was incorrectly treated as `for`/union)
+- Boolean operation panics no longer cascade — failed parts are skipped with a warning, other parts still render
+- BSP-tree boolean fallback: when boolmesh panics, operations automatically retry using csgrs BSP booleans
+- AI model selection restored correctly after app restart (was being cleared during model list fetch)
+- User input and image attachments preserved on AI stream errors (no longer lost on retry)
+
+### Changed
+
+- Chat messages use `is_error` flag for reliable error styling (no string matching)
+- Boolean operations refactored into `bool_op_with_fallback` for unified boolmesh → BSP fallback logic
+- `Shape::Failed` variant prevents corrupted geometry from propagating through subsequent operations
+
 ## [0.3.0] - 2026-02-28
 
 ### Added
