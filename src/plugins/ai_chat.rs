@@ -197,7 +197,7 @@ impl Plugin for AiChatPlugin {
 
 /// Fetch model names when adapter selection changes.
 fn fetch_models_system(
-    ai_config: Res<AiConfig>,
+    mut ai_config: ResMut<AiConfig>,
     mut available: ResMut<AvailableModels>,
     runtime: Res<TokioRuntime>,
 ) {
@@ -237,6 +237,9 @@ fn fetch_models_system(
     // Trigger a new fetch if adapter or API key changed
     let key_changed = available.last_api_key != ai_config.api_key;
     if (available.last_adapter != ai_config.adapter_name || key_changed) && !available.loading {
+        // Clear stale models immediately so the UI doesn't show old data
+        available.models.clear();
+        ai_config.model_name.clear();
         available.last_adapter.clone_from(&ai_config.adapter_name);
         available.last_api_key.clone_from(&ai_config.api_key);
         available.loading = true;
@@ -263,7 +266,6 @@ async fn fetch_model_names(
 ) -> Result<Vec<String>, String> {
     use genai::Client;
     use genai::adapter::AdapterKind;
-    use genai::resolver::AuthData;
 
     let adapter_kind = match adapter_name {
         "OpenAI" => AdapterKind::OpenAI,
@@ -281,61 +283,36 @@ async fn fetch_model_names(
     };
 
     // genai's all_model_names() uses default_auth() (env var) and ignores the
-    // client's auth resolver, so it only succeeds when the env var is set.
-    let client = api_key.map_or_else(Client::default, |key| {
-        let key = key.to_string();
-        Client::builder()
-            .with_auth_resolver_fn(move |_| Ok(Some(AuthData::Key(key.clone()))))
-            .build()
-    });
-    match client.all_model_names(adapter_kind).await {
-        Ok(models) if !models.is_empty() => Ok(models),
-        _ => Ok(fallback_models(adapter_name)),
+    // client's auth resolver. Temporarily set the env var when a UI key is provided.
+    // SAFETY: This runs on a single-threaded tokio task. No other code reads these
+    // env vars concurrently in a way that would cause unsoundness.
+    let env_var = env_var_for_adapter(adapter_name);
+    let prev_env = env_var.map(|name| (name, std::env::var(name).ok()));
+    if let (Some(key), Some(name)) = (api_key, env_var) {
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var(name, key);
+        }
     }
+
+    let client = Client::default();
+    let result = match client.all_model_names(adapter_kind).await {
+        Ok(models) if !models.is_empty() => Ok(models),
+        Ok(_) => Err("No models returned. Check your API key.".into()),
+        Err(e) => Err(format!("Failed to fetch models: {e}")),
+    };
+
+    // Restore previous env var state
+    if let Some((name, prev)) = prev_env {
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var(name, prev.as_deref().unwrap_or(""));
+        }
+    }
+
+    result
 }
 
-/// Curated model lists used when the live API query fails (e.g. no env var).
-fn fallback_models(adapter_name: &str) -> Vec<String> {
-    match adapter_name {
-        "OpenAI" => vec![
-            "gpt-4.1",
-            "gpt-4.1-mini",
-            "gpt-4.1-nano",
-            "gpt-4o",
-            "gpt-4o-mini",
-            "o4-mini",
-            "o3",
-            "o3-mini",
-        ],
-        "Anthropic" => vec![
-            "claude-sonnet-4-20250514",
-            "claude-3-7-sonnet-latest",
-            "claude-3-5-sonnet-latest",
-            "claude-3-5-haiku-latest",
-            "claude-3-opus-latest",
-        ],
-        "Gemini" => vec![
-            "gemini-2.5-pro-preview-06-05",
-            "gemini-2.5-flash-preview-05-20",
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-        ],
-        "Groq" => vec![
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "gemma2-9b-it",
-            "mixtral-8x7b-32768",
-        ],
-        "DeepSeek" => vec!["deepseek-chat", "deepseek-reasoner"],
-        "Cohere" => vec!["command-r-plus", "command-r", "command-light"],
-        "Xai" => vec!["grok-3", "grok-3-mini", "grok-2"],
-        "Fireworks" | "Together" => vec!["llama-v3p3-70b-instruct".into()],
-        _ => vec![],
-    }
-    .into_iter()
-    .map(String::from)
-    .collect()
-}
 
 fn ai_send_system(
     mut chat_state: ResMut<ChatState>,
