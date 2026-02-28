@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-02-28
+
+### Added
+
+- **Search-and-replace diffs** — AI can now send targeted `<<<REPLACE` / `===` / `>>>` blocks instead of full code replacement, saving tokens on large scripts. Falls back to full replacement automatically.
+- **Syntax-highlighted code blocks** in AI chat responses — OpenSCAD/synapscad code uses the same color scheme as the editor (keywords, builtins, strings, numbers, comments)
+- **Bottom and Isometric views** — AI now receives 5 rendered views (Front, Right, Top, Bottom, Iso) for better spatial understanding
+- **Chat input history preserves images** — pressing ↑/↓ in chat input restores both text and attached images
+- **Session-aware chat** — after app restart, previous chat messages are displayed but not re-sent to the AI, preventing context pollution from old sessions
+- **Code clear resets AI chat** — clearing the code editor also resets the AI chat for a fresh session
+
+### Fixed
+
+- **Error messages always expanded** — error responses in chat are forced open regardless of persisted collapse state
+- **macOS .app bundle launch** — added `NSPrincipalClass` to Info.plist and ad-hoc code signing in release workflow to prevent Gatekeeper blocking
+- **Verification prompt rendering** — backtick-fenced text in verification prompts no longer incorrectly rendered as code blocks
+
+### Changed
+
+- **Splash screen** duration reduced from 3s to 1.5s (fade from 0.5s to 0.3s)
+
 ## [0.4.0] - 2026-02-28
 
 ### Added
