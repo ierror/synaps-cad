@@ -1,11 +1,11 @@
 # SynapsCAD
 
 <p align="center">
-  <img src="assets/splash@2x.png" alt="SynapsCAD" width="260" />
+  The AI-powered 3D CAD IDE — edit code, visualize in 3D, and reshape your designs with natural language.
 </p>
 
 <p align="center">
-  The AI-powered 3D CAD IDE — edit code, visualize in 3D, and reshape your designs with natural language.
+  <img src="assets/splash@2x.png" alt="SynapsCAD" width="260" />
 </p>
 
 <br>
