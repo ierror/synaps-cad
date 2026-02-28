@@ -36,6 +36,12 @@ A desktop 3D CAD application that combines an OpenSCAD code editor, a real-time 
 
 Pre-built binaries for Linux, macOS (Apple Silicon & Intel), and Windows are available on the [Releases](https://github.com/ierror/synaps-cad/releases) page.
 
+> **macOS users:** Since SynapsCAD is not signed with an Apple Developer certificate, macOS will block the app on first launch. To fix this, run:
+> ```sh
+> sudo xattr -rd com.apple.quarantine /path/to/SynapsCAD.app
+> ```
+> We don't pay for an Apple Developer account at this point — if you prefer, you can always [build from source](#building-from-source) instead.
+
 ## Building from Source
 
 ### Prerequisites
