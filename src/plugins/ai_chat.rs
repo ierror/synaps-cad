@@ -163,7 +163,7 @@ pub const VERIFICATION_ROUND_CHOICES: &[u32] = &[1, 2, 5, 10, 15, 20, 50, 100, u
 const VERIFICATION_PROMPT: &str = "\
 These are the rendered orthographic views AFTER your code change was compiled. \
 Compare them carefully against the user's original request. \
-If the result does NOT match what was asked for, provide corrected code in an ```synapscad block. \
+If the result does NOT match what was asked for, provide corrected code in a synapscad code block. \
 If it looks correct, briefly confirm what you see — do NOT repeat the code.";
 
 #[derive(Resource, Default)]
@@ -479,7 +479,7 @@ async fn run_ai_stream(
     // Attach orthographic views to the last user message if available
     if !views.is_empty() {
         let mut parts = vec![ContentPart::from_text(
-            "Current 3D model rendered from three orthographic views:",
+            "Current 3D model rendered from five orthographic/isometric views:",
         )];
         for (label, base64_png) in views {
             if !base64_png.is_empty() {
