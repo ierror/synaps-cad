@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy::render::mesh::MeshAabb;
 use bevy_egui::{EguiContexts, egui};
 
-use super::scene::{CadModel, GizmoVisibility, MainCamera, ViewportGizmo};
+use super::scene::{CadModel, GizmoVisibility, LabelVisibility, MainCamera, ViewportGizmo};
 use super::ui::OccupiedScreenSpace;
 
 pub struct CameraPlugin;
@@ -311,6 +311,7 @@ fn adjust_camera_viewport(
 fn toggle_gizmos_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut gizmo_vis: ResMut<GizmoVisibility>,
+    mut label_vis: ResMut<LabelVisibility>,
     mut gizmos: Query<&mut Visibility, With<ViewportGizmo>>,
     mut contexts: EguiContexts,
 ) {
@@ -332,6 +333,10 @@ fn toggle_gizmos_system(
         for mut v in &mut gizmos {
             *v = vis;
         }
+    }
+
+    if keyboard.just_pressed(KeyCode::KeyL) {
+        label_vis.visible = !label_vis.visible;
     }
 }
 

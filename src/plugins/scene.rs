@@ -29,9 +29,22 @@ impl Default for GizmoVisibility {
     }
 }
 
+/// Visibility state for part labels (@1, @2, ...).
+#[derive(Resource)]
+pub struct LabelVisibility {
+    pub visible: bool,
+}
+
+impl Default for LabelVisibility {
+    fn default() -> Self {
+        Self { visible: true }
+    }
+}
+
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GizmoVisibility>()
+            .init_resource::<LabelVisibility>()
             .add_systems(Startup, setup_scene)
             .add_systems(Update, update_camera_follow_light);
     }

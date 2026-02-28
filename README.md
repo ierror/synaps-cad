@@ -128,6 +128,13 @@ orbit_camera_system        — process mouse/keyboard input for 3D navigation
 zoom_to_fit_system         — auto-frame model after compilation
 ```
 
+## Keyboard Shortcuts
+
+| Action               | Key   |
+| -------------------- | ----- |
+| **Toggle gizmos**    | `G`   |
+| **Toggle labels**    | `L`   |
+
 ## 3D Viewport Navigation
 
 SynapsCAD uses **Blender-style** camera controls:

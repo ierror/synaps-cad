@@ -11,7 +11,7 @@ use super::ai_chat::{
 use super::camera::OrbitCamera;
 use super::code_editor::{ScadCode, UndoHistory, detect_views, set_active_view};
 use super::compilation::{CompilationState, LastCompiledParts, PartLabel};
-use super::scene::MainCamera;
+use super::scene::{LabelVisibility, MainCamera};
 use crate::export::{self, ALL_FORMATS, ExportFormat};
 
 pub struct UiPlugin;
@@ -1210,6 +1210,7 @@ fn viewport_toolbar_system(
     mut history: ResMut<UndoHistory>,
     mut orbit: ResMut<OrbitCamera>,
     mut ruler: ResMut<super::camera::RulerState>,
+    mut label_vis: ResMut<LabelVisibility>,
 ) {
     let Some(ctx) = contexts.try_ctx_mut() else {
         return;
@@ -1328,6 +1329,16 @@ fn viewport_toolbar_system(
                                 ruler.point_a = None;
                                 ruler.point_b = None;
                             }
+                        }
+
+                        // --- Label visibility toggle ---
+                        let label_btn = if label_vis.visible { "@" } else { "@ ✗" };
+                        if ui
+                            .selectable_label(label_vis.visible, label_btn)
+                            .on_hover_text("Toggle part labels (L)")
+                            .clicked()
+                        {
+                            label_vis.visible = !label_vis.visible;
                         }
                     });
                 });
@@ -1482,7 +1493,11 @@ fn draw_part_labels(
     camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     occupied: Res<OccupiedScreenSpace>,
     splash: Res<SplashScreen>,
+    label_vis: Res<LabelVisibility>,
 ) {
+    if !label_vis.visible {
+        return;
+    }
     if splash.timer > -SPLASH_FADE_DURATION {
         return;
     }

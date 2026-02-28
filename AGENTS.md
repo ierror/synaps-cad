@@ -33,7 +33,7 @@ Code Editor (auto-apply)
 | `ScenePlugin`       | `scene.rs`       | Camera, lights, axes, grid setup                                         |
 | `CodeEditorPlugin`  | `code_editor.rs` | OpenSCAD text editor, undo/redo, view detection (`$view` variable)       |
 | `CompilationPlugin` | `compilation.rs` | Triggers compilation, spawns mesh entities with `CadModel` + `PartLabel` |
-| `CameraPlugin`      | `camera.rs`      | Orbit/pan/zoom controls, zoom-to-fit                                     |
+| `CameraPlugin`      | `camera.rs`      | Orbit/pan/zoom controls, zoom-to-fit, keyboard toggles (G=gizmos, L=labels) |
 | `UiPlugin`          | `ui.rs`          | egui side panel layout, viewport toolbar, label overlays                 |
 | `AiChatPlugin`      | `ai_chat.rs`     | AI streaming chat with context injection                                 |
 | `PersistencePlugin` | `persistence.rs` | Save/load settings and code                                              |
@@ -171,3 +171,5 @@ Example: `color("green") cylinder(h = 20, r = 3);` for a plant stem.
 ## Maintaining This Document
 
 **Keep `AGENTS.md` up to date.** When making architecture-relevant changes — new plugins, new resources/components, changed data flow, new UI patterns, or new conventions — update this file so that AI agents always have accurate context about the codebase.
+
+**Keep `README.md` keyboard shortcuts table up to date.** When adding or changing keyboard shortcuts (in `camera.rs` or elsewhere), update the "Keyboard Shortcuts" and "3D Viewport Navigation" sections in `README.md` to match.
