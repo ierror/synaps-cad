@@ -30,7 +30,10 @@ openscad-rs = "0.1.0"
 rfd = "0.17.2"
 
 [lints.rust]
-unsafe_code = "forbid"
+# "deny" instead of "forbid" to allow #[allow(unsafe_code)] in ai_chat.rs where
+# genai requires std::env::set_var (unsafe in edition 2024) for model listing.
+# Revert to "forbid" if genai adds auth-resolver support for all_model_names().
+unsafe_code = "deny"
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }

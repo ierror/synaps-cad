@@ -1038,30 +1038,44 @@ fn ui_layout_system(
             });
             ui.horizontal(|ui| {
                 ui.label("Model:");
-                let model_label = if available_models.loading {
-                    "Loading...".to_string()
-                } else if available_models.models.is_empty() {
-                    "No models available".to_string()
+                // Check if adapter requires an API key and none is set
+                let needs_key = env_var_for_adapter(&ai_config.adapter_name).is_some();
+                let env_key_set = env_var_for_adapter(&ai_config.adapter_name)
+                    .and_then(|name| std::env::var(name).ok())
+                    .is_some_and(|v| !v.is_empty());
+                let has_key = !needs_key || env_key_set || !ai_config.api_key.is_empty();
+
+                if !has_key {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 180, 50),
+                        "⚠ Set API key first",
+                    );
                 } else {
-                    ai_config.model_name.clone()
-                };
-                let prev_model = ai_config.model_name.clone();
-                egui::ComboBox::from_id_salt("ai_model_select")
-                    .selected_text(model_label)
-                    .show_ui(ui, |ui| {
-                        for model in &available_models.models {
-                            ui.selectable_value(
-                                &mut ai_config.model_name,
-                                model.clone(),
-                                model.as_str(),
-                            );
-                        }
-                    });
-                // Clear warning when user picks a valid model
-                if ai_config.model_name != prev_model
-                    && available_models.models.contains(&ai_config.model_name)
-                {
-                    available_models.needs_configuration = false;
+                    let model_label = if available_models.loading {
+                        "Loading...".to_string()
+                    } else if available_models.models.is_empty() {
+                        "No models available".to_string()
+                    } else {
+                        ai_config.model_name.clone()
+                    };
+                    let prev_model = ai_config.model_name.clone();
+                    egui::ComboBox::from_id_salt("ai_model_select")
+                        .selected_text(model_label)
+                        .show_ui(ui, |ui| {
+                            for model in &available_models.models {
+                                ui.selectable_value(
+                                    &mut ai_config.model_name,
+                                    model.clone(),
+                                    model.as_str(),
+                                );
+                            }
+                        });
+                    // Clear warning when user picks a valid model
+                    if ai_config.model_name != prev_model
+                        && available_models.models.contains(&ai_config.model_name)
+                    {
+                        available_models.needs_configuration = false;
+                    }
                 }
             });
             if let Some(ref err) = available_models.error {
