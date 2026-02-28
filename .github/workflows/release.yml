@@ -69,6 +69,8 @@ jobs:
           cp target/${{ matrix.target }}/release/synaps-cad "$APP/Contents/MacOS/"
           cp assets/icon.icns "$APP/Contents/Resources/icon.icns"
           sed "s/0\.4\.0/$VERSION/g" assets/macos/Info.plist > "$APP/Contents/Info.plist"
+          # Ad-hoc code sign so macOS doesn't block the app
+          codesign --force --deep -s - "$APP"
           tar czf ${{ matrix.artifact }} "$APP"
 
       - name: Package (Linux)
