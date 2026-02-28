@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use super::ai_chat::{AiConfig, ChatImage, ChatMessage, ChatState};
 use super::code_editor::ScadCode;
+use super::scene::LabelVisibility;
 
 pub struct PersistencePlugin;
 
@@ -41,9 +42,27 @@ struct PersistentData {
     max_verification_rounds: u32,
     #[serde(default)]
     api_key: String,
+    #[serde(default)]
+    ui: UiSettings,
     /// Legacy: old multi-part data. Merged into `editor_code` on load.
     #[serde(default)]
     parts: std::collections::HashMap<String, String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct UiSettings {
+    #[serde(default = "default_true")]
+    show_labels: bool,
+}
+
+impl Default for UiSettings {
+    fn default() -> Self {
+        Self { show_labels: true }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_verification_rounds() -> u32 {
@@ -61,7 +80,7 @@ fn session_path() -> Option<PathBuf> {
 impl Plugin for PersistencePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, load_session_system)
-            .add_systems(Update, auto_save_system);
+            .add_systems(Update, (auto_save_system, save_on_exit_system, save_on_ui_change_system));
     }
 }
 
@@ -69,6 +88,7 @@ fn load_session_system(
     mut ai_config: ResMut<AiConfig>,
     mut chat_state: ResMut<ChatState>,
     mut scad_code: ResMut<ScadCode>,
+    mut label_vis: ResMut<LabelVisibility>,
 ) {
     let Some(path) = session_path() else {
         return;
@@ -92,6 +112,8 @@ fn load_session_system(
     ai_config.temperature = saved.temperature;
     ai_config.max_verification_rounds = saved.max_verification_rounds;
     ai_config.api_key = saved.api_key;
+
+    label_vis.visible = saved.ui.show_labels;
 
     chat_state.messages = saved
         .chat_messages
@@ -146,16 +168,41 @@ fn auto_save_system(
     ai_config: Res<AiConfig>,
     chat_state: Res<ChatState>,
     scad_code: Res<ScadCode>,
+    label_vis: Res<LabelVisibility>,
 ) {
     timer.0.tick(time.delta());
     if !timer.0.just_finished() {
         return;
     }
 
-    save_session(&ai_config, &chat_state, &scad_code);
+    save_session(&ai_config, &chat_state, &scad_code, &label_vis);
 }
 
-fn save_session(ai_config: &AiConfig, chat_state: &ChatState, scad_code: &ScadCode) {
+fn save_on_exit_system(
+    exit_events: EventReader<AppExit>,
+    ai_config: Res<AiConfig>,
+    chat_state: Res<ChatState>,
+    scad_code: Res<ScadCode>,
+    label_vis: Res<LabelVisibility>,
+) {
+    if !exit_events.is_empty() {
+        save_session(&ai_config, &chat_state, &scad_code, &label_vis);
+    }
+}
+
+/// Save immediately when UI settings (like label visibility) change.
+fn save_on_ui_change_system(
+    label_vis: Res<LabelVisibility>,
+    ai_config: Res<AiConfig>,
+    chat_state: Res<ChatState>,
+    scad_code: Res<ScadCode>,
+) {
+    if label_vis.is_changed() && !label_vis.is_added() {
+        save_session(&ai_config, &chat_state, &scad_code, &label_vis);
+    }
+}
+
+fn save_session(ai_config: &AiConfig, chat_state: &ChatState, scad_code: &ScadCode, label_vis: &LabelVisibility) {
     let Some(dir) = config_dir() else {
         return;
     };
@@ -199,6 +246,9 @@ fn save_session(ai_config: &AiConfig, chat_state: &ChatState, scad_code: &ScadCo
         editor_code: scad_code.text.clone(),
         max_verification_rounds: ai_config.max_verification_rounds,
         api_key: ai_config.api_key.clone(),
+        ui: UiSettings {
+            show_labels: label_vis.visible,
+        },
         parts: std::collections::HashMap::new(),
     };
 
