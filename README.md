@@ -1,7 +1,7 @@
 # SynapsCAD
 
 <p align="center">
-  <img src="assets/splash@2x.png" alt="SynapsCAD" width="280" />
+  <img src="assets/splash@2x.png" alt="SynapsCAD" width="260" />
 </p>
 
 <p align="center">
@@ -16,7 +16,11 @@
 
 ## See SynapsCAD in Action
 
-[![SynapsCAD Demo](https://img.youtube.com/vi/cN8a5UozS5Q/maxresdefault.jpg)](https://www.youtube.com/watch?v=cN8a5UozS5Q)
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=cN8a5UozS5Q">
+    <img src="assets/Screenshot-2026-02-28.png" alt="SynapsCAD Screenshot" width="100%" />
+  </a>
+</p>
 
 ## Overview
 
