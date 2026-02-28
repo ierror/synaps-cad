@@ -145,8 +145,11 @@ fn load_session_system(
         .messages
         .iter()
         .filter(|m| m.role == "user" && !m.auto_generated)
-        .map(|m| m.content.clone())
+        .map(|m| (m.content.clone(), m.images.clone()))
         .collect();
+
+    // Mark restored messages as previous session — they won't be sent to the AI
+    chat_state.session_start = chat_state.messages.len();
 
     // Backward compat: if old multi-part data exists, merge into single buffer
     if !saved.parts.is_empty() {

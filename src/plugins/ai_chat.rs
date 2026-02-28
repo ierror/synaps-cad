@@ -20,6 +20,7 @@ module view_main() { /* all geometry here */ }\n\
 if ($view == \"main\") view_main();\n\
 ```\n\
 Only add additional views (e.g. \"assembly\", \"part_a\") when the user explicitly asks for them. \
+If you create multiple parts, create views for each part.\n
 \n\
 ## General Guidelines\n\
 Be concise and helpful.\n\
@@ -169,7 +170,7 @@ If it looks correct, briefly confirm what you see — do NOT repeat the code.";
 pub struct ChatState {
     pub messages: Vec<ChatMessage>,
     pub input_buffer: String,
-    pub input_history: Vec<String>,
+    pub input_history: Vec<(String, Vec<ChatImage>)>,
     pub history_index: Option<usize>,
     pub is_streaming: bool,
     pub stream_receiver: Option<Mutex<mpsc::Receiver<AiStreamChunk>>>,
@@ -179,6 +180,9 @@ pub struct ChatState {
     /// `WaitingForCompilation`. After compilation completes and views update,
     /// it transitions to `ReadyToVerify` and a verification round fires.
     pub verification: VerificationState,
+    /// Index into `messages` where the current session starts.
+    /// Messages before this index are displayed but not sent to the AI.
+    pub session_start: usize,
 }
 
 /// Tracks the auto-verification loop state.
@@ -358,7 +362,7 @@ fn ai_send_system(
         return;
     }
 
-    let messages = chat_state.messages.clone();
+    let messages: Vec<ChatMessage> = chat_state.messages[chat_state.session_start..].to_vec();
     let part_context = build_part_context(&part_query);
     // Collect user-attached images from the most recent user message
     let user_images: Vec<ChatImage> = messages
@@ -689,8 +693,33 @@ fn ai_receive_system(
                 chat_state.is_streaming = false;
                 chat_state.stream_receiver = None;
 
-                if let Some(new_code) = extract_openscad_code(&content) {
-                    scad_code.text = new_code;
+                let code_changed = match extract_code_change(&content) {
+                    Some(CodeChange::FullReplace(new_code)) => {
+                        scad_code.text = new_code;
+                        true
+                    }
+                    Some(CodeChange::SearchReplace(replacements)) => {
+                        match apply_search_replace(&scad_code.text, &replacements) {
+                            Ok(new_code) => {
+                                scad_code.text = new_code;
+                                true
+                            }
+                            Err(err) => {
+                                eprintln!("[SynapsCAD] Search-and-replace failed: {err}");
+                                // Try full replacement as fallback
+                                if let Some(full) = extract_openscad_code(&content) {
+                                    scad_code.text = full;
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                        }
+                    }
+                    None => false,
+                };
+
+                if code_changed {
                     scad_code.dirty = true;
 
                     let round = match &chat_state.verification {
@@ -814,6 +843,95 @@ fn build_part_context(part_query: &Query<&PartLabel>) -> String {
     ctx
 }
 
+/// Result of extracting code from an AI response.
+enum CodeChange {
+    /// Full replacement — the AI sent a complete `synapscad` code block.
+    FullReplace(String),
+    /// Search-and-replace pairs — the AI sent `<<<REPLACE` blocks.
+    SearchReplace(Vec<(String, String)>),
+}
+
+/// Extracts code changes from AI response.
+/// First tries `<<<REPLACE` search-and-replace blocks, then falls back to full `synapscad` block.
+fn extract_code_change(text: &str) -> Option<CodeChange> {
+    // Try search-and-replace first
+    let replacements = parse_search_replace(text);
+    if !replacements.is_empty() {
+        return Some(CodeChange::SearchReplace(replacements));
+    }
+
+    // Fall back to full replacement
+    extract_openscad_code(text).map(CodeChange::FullReplace)
+}
+
+/// Parses `<<<REPLACE` / `===` / `>>>` blocks from AI response.
+fn parse_search_replace(text: &str) -> Vec<(String, String)> {
+    let mut results = Vec::new();
+    let mut remaining = text;
+
+    while let Some(start) = remaining.find("<<<REPLACE") {
+        let after_marker = &remaining[start + "<<<REPLACE".len()..];
+        // Skip to newline after <<<REPLACE
+        let after_newline = if let Some(nl) = after_marker.find('\n') {
+            &after_marker[nl + 1..]
+        } else {
+            break;
+        };
+
+        // Find the separator ===
+        let separator = if let Some(sep) = after_newline.find("\n===\n") {
+            sep
+        } else {
+            break;
+        };
+
+        let old_str = &after_newline[..separator];
+
+        let after_sep = &after_newline[separator + "\n===\n".len()..];
+
+        // Find closing >>>
+        let end = if let Some(e) = after_sep.find("\n>>>") {
+            e
+        } else {
+            break;
+        };
+
+        let new_str = &after_sep[..end];
+
+        if !old_str.is_empty() {
+            results.push((old_str.to_string(), new_str.to_string()));
+        }
+
+        remaining = &after_sep[end + "\n>>>".len()..];
+    }
+
+    results
+}
+
+/// Applies search-and-replace pairs to the current code buffer.
+/// Returns the modified code, or None if any replacement failed to find its target.
+fn apply_search_replace(code: &str, replacements: &[(String, String)]) -> Result<String, String> {
+    let mut result = code.to_string();
+    for (i, (old, new)) in replacements.iter().enumerate() {
+        let count = result.matches(old.as_str()).count();
+        if count == 0 {
+            return Err(format!(
+                "Search-and-replace #{}: could not find the target text in the code",
+                i + 1
+            ));
+        }
+        if count > 1 {
+            return Err(format!(
+                "Search-and-replace #{}: target text appears {} times (must be unique)",
+                i + 1,
+                count
+            ));
+        }
+        result = result.replacen(old.as_str(), new.as_str(), 1);
+    }
+    Ok(result)
+}
+
 /// Extracts OpenSCAD code from AI response.
 /// Supports `\`\`\`synapscad` code blocks (ignores any `:suffix`).
 fn extract_openscad_code(text: &str) -> Option<String> {
@@ -827,4 +945,105 @@ fn extract_openscad_code(text: &str) -> Option<String> {
     let end = code_rest.find("```")?;
     let code = code_rest[..end].trim().to_string();
     if code.is_empty() { None } else { Some(code) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_search_replace_single() {
+        let text = "Here's the change:\n\n<<<REPLACE\ncube(10);\n===\ncube(20);\n>>>\n\nDone!";
+        let pairs = parse_search_replace(text);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].0, "cube(10);");
+        assert_eq!(pairs[0].1, "cube(20);");
+    }
+
+    #[test]
+    fn test_parse_search_replace_multiple() {
+        let text = "<<<REPLACE\ncube(10);\n===\ncube(20);\n>>>\n\n<<<REPLACE\nsphere(5);\n===\nsphere(10);\n>>>";
+        let pairs = parse_search_replace(text);
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0].0, "cube(10);");
+        assert_eq!(pairs[0].1, "cube(20);");
+        assert_eq!(pairs[1].0, "sphere(5);");
+        assert_eq!(pairs[1].1, "sphere(10);");
+    }
+
+    #[test]
+    fn test_parse_search_replace_multiline() {
+        let text = "<<<REPLACE\nmodule foo() {\n    cube(10);\n}\n===\nmodule foo() {\n    cube(20);\n    sphere(5);\n}\n>>>";
+        let pairs = parse_search_replace(text);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].0, "module foo() {\n    cube(10);\n}");
+        assert_eq!(pairs[0].1, "module foo() {\n    cube(20);\n    sphere(5);\n}");
+    }
+
+    #[test]
+    fn test_parse_search_replace_empty_new() {
+        let text = "<<<REPLACE\ncube(10);\n===\n\n>>>";
+        let pairs = parse_search_replace(text);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].0, "cube(10);");
+        assert_eq!(pairs[0].1, "");
+    }
+
+    #[test]
+    fn test_parse_search_replace_none() {
+        let text = "Just some text without any replace blocks.";
+        let pairs = parse_search_replace(text);
+        assert!(pairs.is_empty());
+    }
+
+    #[test]
+    fn test_apply_search_replace_ok() {
+        let code = "cube(10);\nsphere(5);";
+        let replacements = vec![("cube(10);".into(), "cube(20);".into())];
+        let result = apply_search_replace(code, &replacements).unwrap();
+        assert_eq!(result, "cube(20);\nsphere(5);");
+    }
+
+    #[test]
+    fn test_apply_search_replace_not_found() {
+        let code = "cube(10);";
+        let replacements = vec![("cylinder(5);".into(), "cylinder(10);".into())];
+        assert!(apply_search_replace(code, &replacements).is_err());
+    }
+
+    #[test]
+    fn test_apply_search_replace_ambiguous() {
+        let code = "cube(10);\ncube(10);";
+        let replacements = vec![("cube(10);".into(), "cube(20);".into())];
+        assert!(apply_search_replace(code, &replacements).is_err());
+    }
+
+    #[test]
+    fn test_extract_code_change_prefers_replace() {
+        let text = "<<<REPLACE\ncube(10);\n===\ncube(20);\n>>>\n\n```synapscad\ncube(99);\n```";
+        match extract_code_change(text) {
+            Some(CodeChange::SearchReplace(pairs)) => {
+                assert_eq!(pairs.len(), 1);
+                assert_eq!(pairs[0].1, "cube(20);");
+            }
+            _ => panic!("Expected SearchReplace"),
+        }
+    }
+
+    #[test]
+    fn test_extract_code_change_full_replace() {
+        let text = "Here's the code:\n\n```synapscad\ncube(10);\n```";
+        match extract_code_change(text) {
+            Some(CodeChange::FullReplace(code)) => {
+                assert_eq!(code, "cube(10);");
+            }
+            _ => panic!("Expected FullReplace"),
+        }
+    }
+
+    #[test]
+    fn test_extract_code_change_none() {
+        let text = "No code here, just a description.";
+        assert!(extract_code_change(text).is_none());
+    }
 }

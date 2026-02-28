@@ -188,8 +188,8 @@ fn setup_egui_theme(mut contexts: EguiContexts) {
 }
 
 const SPLASH_IMAGE_BYTES: &[u8] = include_bytes!("../../assets/splash@2x.png");
-const SPLASH_DURATION: f32 = 3.0;
-const SPLASH_FADE_DURATION: f32 = 0.5;
+const SPLASH_DURATION: f32 = 1.5;
+const SPLASH_FADE_DURATION: f32 = 0.3;
 
 fn set_window_icon(
     mut contexts: EguiContexts,
@@ -598,6 +598,7 @@ fn ui_layout_system(
                     chat_state.input_history.clear();
                     chat_state.history_index = None;
                     chat_state.pending_images.clear();
+                    chat_state.session_start = 0;
                 }
                 // Verify rounds selector
                 let selected_label = if ai_config.max_verification_rounds == u32::MAX {
@@ -734,19 +735,22 @@ fn ui_layout_system(
                             |i| i.saturating_sub(1),
                         );
                         chat_state.history_index = Some(idx);
-                        chat_state.input_buffer =
-                            chat_state.input_history[idx].clone();
+                        let (text, images) = chat_state.input_history[idx].clone();
+                        chat_state.input_buffer = text;
+                        chat_state.pending_images = images;
                     }
                 } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown))
                     && let Some(idx) = chat_state.history_index {
                         if idx + 1 < chat_state.input_history.len() {
                             let new_idx = idx + 1;
                             chat_state.history_index = Some(new_idx);
-                            chat_state.input_buffer =
-                                chat_state.input_history[new_idx].clone();
+                            let (text, images) = chat_state.input_history[new_idx].clone();
+                            chat_state.input_buffer = text;
+                            chat_state.pending_images = images;
                         } else {
                             chat_state.history_index = None;
                             chat_state.input_buffer.clear();
+                            chat_state.pending_images.clear();
                         }
                     }
             }
@@ -761,7 +765,7 @@ fn ui_layout_system(
             {
                 let user_msg = chat_state.input_buffer.trim().to_string();
                 let images = std::mem::take(&mut chat_state.pending_images);
-                chat_state.input_history.push(user_msg.clone());
+                chat_state.input_history.push((user_msg.clone(), images.clone()));
                 chat_state.history_index = None;
                 chat_state.messages.push(super::ai_chat::ChatMessage {
                     role: "user".into(),
@@ -843,11 +847,15 @@ fn ui_layout_system(
                     } else {
                         rev_i == 0 || !is_user || msg.is_error
                     };
-                    let state = egui::collapsing_header::CollapsingState::load_with_default_open(
+                    let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
                         ui.ctx(),
                         id,
                         default_open,
                     );
+                    // Force error messages open regardless of persisted state
+                    if msg.is_error {
+                        state.set_open(true);
+                    }
                     state
                         .show_header(ui, |ui| {
                             ui.label(egui::RichText::new(&header_text).strong().color(color));
@@ -868,20 +876,11 @@ fn ui_layout_system(
                                     },
                                 );
                             }
-                            ui.horizontal_wrapped(|ui| {
-                                let label_resp = if msg.is_error {
-                                    ui.label(
-                                        egui::RichText::new(&msg.content)
-                                            .color(egui::Color32::from_rgb(255, 120, 120)),
-                                    )
-                                } else {
-                                    ui.label(&msg.content)
-                                };
+                            let scroll_resp = render_chat_content(ui, &msg.content, msg.is_error);
                                 // Auto-scroll to keep the latest streaming text visible
                                 if chat_state.is_streaming && rev_i == 0 {
-                                    label_resp.scroll_to_me(Some(egui::Align::BOTTOM));
+                                    scroll_resp.scroll_to_me(Some(egui::Align::BOTTOM));
                                 }
-                            });
                             if !msg.images.is_empty() {
                                 for img in &msg.images {
                                     let frame_resp = egui::Frame::new()
@@ -929,6 +928,13 @@ fn ui_layout_system(
                 if ui.button("🗑").on_hover_text("Clear code").clicked() {
                     scad_code.text.clear();
                     scad_code.dirty = true;
+                    // Reset AI chat for a fresh session
+                    chat_state.messages.clear();
+                    chat_state.input_history.clear();
+                    chat_state.history_index = None;
+                    chat_state.pending_images.clear();
+                    chat_state.verification = super::ai_chat::VerificationState::Idle;
+                    chat_state.session_start = 0;
                 }
                 // Export menu
                 let has_parts = !last_parts.parts.is_empty();
@@ -1178,6 +1184,124 @@ fn ui_layout_system(
         });
 
     // --- New Part dialog ---
+}
+
+/// Render chat message content with code blocks highlighted.
+/// Returns the Response of the last widget for scroll_to_me.
+fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> egui::Response {
+    let code_bg = egui::Color32::from_rgb(30, 30, 46);
+    let code_color = egui::Color32::from_rgb(220, 220, 170);
+    let error_color = egui::Color32::from_rgb(255, 120, 120);
+    let lang_color = egui::Color32::from_rgb(100, 100, 130);
+    let use_highlighting = |lang: &str| -> bool {
+        matches!(lang.to_lowercase().as_str(), "synapscad" | "openscad" | "scad")
+    };
+
+    let mut last_resp: Option<egui::Response> = None;
+    let mut remaining = content;
+
+    while !remaining.is_empty() {
+        if let Some(fence_start) = remaining.find("```") {
+            // Render text before the code fence
+            let before = &remaining[..fence_start];
+            if !before.is_empty() {
+                if is_error {
+                    ui.label(egui::RichText::new(before.trim_end()).color(error_color));
+                } else {
+                    ui.label(before.trim_end());
+                }
+            }
+
+            let after_fence = &remaining[fence_start + 3..];
+            // Find closing ```
+            if let Some(close_pos) = after_fence.find("```") {
+                let block = &after_fence[..close_pos];
+                // First line may be language tag
+                let (lang, code) = if let Some(newline) = block.find('\n') {
+                    let lang_tag = block[..newline].trim();
+                    (lang_tag, &block[newline + 1..])
+                } else {
+                    ("", block)
+                };
+
+                let r = egui::Frame::new()
+                    .fill(code_bg)
+                    .corner_radius(egui::CornerRadius::same(4))
+                    .inner_margin(egui::Margin::same(6))
+                    .show(ui, |ui| {
+                        if !lang.is_empty() {
+                            ui.label(
+                                egui::RichText::new(lang)
+                                    .small()
+                                    .color(lang_color),
+                            );
+                        }
+                        let trimmed = code.trim_end();
+                        if use_highlighting(lang) {
+                            let font_id = egui::FontId::monospace(12.0);
+                            let job = highlight_openscad(trimmed, font_id);
+                            ui.label(job);
+                        } else {
+                            ui.label(
+                                egui::RichText::new(trimmed)
+                                    .monospace()
+                                    .color(code_color),
+                            );
+                        }
+                    });
+                last_resp = Some(r.response);
+                remaining = &after_fence[close_pos + 3..];
+            } else {
+                // Unclosed fence (streaming) — render rest as code
+                let block = after_fence;
+                let (lang, code) = if let Some(newline) = block.find('\n') {
+                    let lang_tag = block[..newline].trim();
+                    (lang_tag, &block[newline + 1..])
+                } else {
+                    ("", block)
+                };
+                let r = egui::Frame::new()
+                    .fill(code_bg)
+                    .corner_radius(egui::CornerRadius::same(4))
+                    .inner_margin(egui::Margin::same(6))
+                    .show(ui, |ui| {
+                        if !lang.is_empty() {
+                            ui.label(
+                                egui::RichText::new(lang)
+                                    .small()
+                                    .color(lang_color),
+                            );
+                        }
+                        let trimmed = code.trim_end();
+                        if use_highlighting(lang) {
+                            let font_id = egui::FontId::monospace(12.0);
+                            let job = highlight_openscad(trimmed, font_id);
+                            ui.label(job);
+                        } else {
+                            ui.label(
+                                egui::RichText::new(trimmed)
+                                    .monospace()
+                                    .color(code_color),
+                            );
+                        }
+                    });
+                last_resp = Some(r.response);
+                remaining = "";
+            }
+        } else {
+            // No more code fences — render remaining as plain text
+            let r = if is_error {
+                ui.label(egui::RichText::new(remaining.trim_end()).color(error_color))
+            } else {
+                ui.label(remaining.trim_end())
+            };
+            last_resp = Some(r);
+            remaining = "";
+        }
+    }
+
+    // Fallback if content was empty
+    last_resp.unwrap_or_else(|| ui.label(""))
 }
 
 fn poll_file_picker_system(
