@@ -23,7 +23,7 @@
 ## See SynapsCAD in Action
 
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=cN8a5UozS5Q">
+  <a href="assets/Screenshot-2026-02-28.png">
     <img src="assets/Screenshot-2026-02-28.png" alt="SynapsCAD Screenshot" width="100%" />
   </a>
 </p>
