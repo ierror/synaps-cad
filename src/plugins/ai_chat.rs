@@ -362,6 +362,14 @@ fn ai_send_system(
     let (tx, rx) = mpsc::channel();
     chat_state.stream_receiver = Some(Mutex::new(rx));
 
+    if cfg!(debug_assertions) {
+        eprintln!("[DEBUG] === AI Chat Request ===");
+        eprintln!("[DEBUG] Model: {model_name}");
+        eprintln!("[DEBUG] System prompt: {} chars", system_prompt.len());
+        eprintln!("[DEBUG] Messages: {}", messages.len());
+        eprintln!("[DEBUG] Views: {}, User images: {}", views.len(), user_images.len());
+    }
+
     runtime.0.spawn(async move {
         let result = run_ai_stream(
             messages,
@@ -377,6 +385,9 @@ fn ai_send_system(
         )
         .await;
         if let Err(e) = result {
+            if cfg!(debug_assertions) {
+                eprintln!("[DEBUG] AI error: {e}");
+            }
             let _ = tx.send(AiStreamChunk::Error(format!("AI error: {e}")));
         }
     });
@@ -413,6 +424,18 @@ async fn run_ai_stream(
     if !part_context.is_empty() {
         system_prompt.push('\n');
         system_prompt.push_str(&part_context);
+    }
+
+    if cfg!(debug_assertions) {
+        eprintln!("[DEBUG] --- Full system prompt ({} chars) ---", system_prompt.len());
+        eprintln!("{system_prompt}");
+        eprintln!("[DEBUG] --- Chat messages ({} total) ---", messages.len());
+        for (i, msg) in messages.iter().enumerate() {
+            let preview: String = msg.content.chars().take(200).collect();
+            eprintln!("[DEBUG]   [{i}] {} (auto={}): {preview}", msg.role, msg.auto_generated);
+        }
+        eprintln!("[DEBUG] Views: {}, User images: {}", views.len(), user_images.len());
+        eprintln!("[DEBUG] ---");
     }
 
     let mut chat_req = ChatRequest::default().with_system(system_prompt);
@@ -481,6 +504,14 @@ async fn run_ai_stream(
     let content = response.first_text().unwrap_or("(no response)").to_string();
 
     let reasoning = response.reasoning_content;
+
+    if cfg!(debug_assertions) {
+        let preview: String = content.chars().take(500).collect();
+        eprintln!("[DEBUG] AI response ({} chars): {preview}", content.len());
+        if let Some(ref r) = reasoning {
+            eprintln!("[DEBUG] AI reasoning ({} chars)", r.len());
+        }
+    }
 
     let _ = tx.send(AiStreamChunk::Done { content, reasoning });
 

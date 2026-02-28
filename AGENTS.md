@@ -148,6 +148,20 @@ cargo clippy       # lint
 - **No-panic tests**: for features using dependencies with known issues (spade, csgrs), verify they don't crash
 - **Unit tests**: for specific compiler features (cones, polyhedra, boolean ops)
 
+### Debug Logging
+
+Use `cfg!(debug_assertions)` to guard debug output. This ensures logs appear only in `cargo run` (debug mode) and are stripped entirely from release builds (`cargo build --release`).
+
+```rust
+if cfg!(debug_assertions) {
+    eprintln!("[DEBUG] Some diagnostic info: {value}");
+}
+```
+
+**Convention:** Prefix debug lines with `[DEBUG]`, info/status lines with `[SynapsCAD]`. Never use `println!` — all diagnostic output goes to stderr via `eprintln!`.
+
+The AI chat pipeline (`ai_chat.rs`) logs the full request (system prompt, messages, model) and response in debug mode.
+
 ## UI Conventions
 
 - **Hand cursor on hover**: All clickable/interactive widgets display a pointing-hand cursor. This is set globally via `style.interaction.interact_cursor` in `setup_egui_theme` — do **not** set cursors per-widget.
