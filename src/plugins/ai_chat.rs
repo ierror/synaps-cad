@@ -21,7 +21,7 @@ if ($view == \"main\") view_main();\n\
 ```\n\
 Only add additional views (e.g. \"assembly\", \"part_a\") when the user explicitly asks for them. \
 If you create multiple parts, create views for each part.\n
-\n\
+\n\n\
 ## General Guidelines\n\
 Be concise and helpful.\n\
 Always verify your results after making changes with the given 3D context \
@@ -84,11 +84,29 @@ pub fn env_var_for_adapter(adapter: &str) -> Option<&'static str> {
 pub struct AiConfig {
     pub adapter_name: String,
     pub model_name: String,
-    pub api_key: String,
+    /// Per-provider API keys (adapter_name → key).
+    pub api_keys: std::collections::HashMap<String, String>,
     pub system_prompt: String,
     pub temperature: f64,
     /// Maximum automatic verification rounds (u32::MAX = unlimited).
     pub max_verification_rounds: u32,
+}
+
+impl AiConfig {
+    /// Get the API key for the currently selected adapter.
+    pub fn api_key(&self) -> &str {
+        self.api_keys
+            .get(&self.adapter_name)
+            .map(String::as_str)
+            .unwrap_or("")
+    }
+
+    /// Get a mutable reference to the API key for the currently selected adapter.
+    pub fn api_key_mut(&mut self) -> &mut String {
+        self.api_keys
+            .entry(self.adapter_name.clone())
+            .or_default()
+    }
 }
 
 impl Default for AiConfig {
@@ -96,7 +114,7 @@ impl Default for AiConfig {
         Self {
             adapter_name: "Anthropic".into(),
             model_name: "claude-3-5-sonnet-latest".into(),
-            api_key: String::new(),
+            api_keys: std::collections::HashMap::new(),
             system_prompt: DEFAULT_SYSTEM_PROMPT.into(),
             temperature: 0.7,
             max_verification_rounds: 2,
@@ -267,7 +285,8 @@ fn fetch_models_system(
     }
 
     // Trigger a new fetch if adapter or API key changed
-    let key_changed = available.last_api_key != ai_config.api_key;
+    let current_key = ai_config.api_key().to_string();
+    let key_changed = available.last_api_key != current_key;
     if (available.last_adapter != ai_config.adapter_name || key_changed) && !available.loading {
         // Clear stale models immediately so the UI doesn't show old data
         available.models.clear();
@@ -277,14 +296,14 @@ fn fetch_models_system(
         }
         ai_config.model_name.clear();
         available.last_adapter.clone_from(&ai_config.adapter_name);
-        available.last_api_key.clone_from(&ai_config.api_key);
+        available.last_api_key = current_key.clone();
         available.loading = true;
 
         let adapter_name = ai_config.adapter_name.clone();
-        let api_key = if ai_config.api_key.is_empty() {
+        let api_key = if current_key.is_empty() {
             None
         } else {
-            Some(ai_config.api_key.clone())
+            Some(current_key)
         };
         let (tx, rx) = mpsc::channel();
         available.receiver = Some(Mutex::new(rx));
@@ -373,10 +392,11 @@ fn ai_send_system(
 
     let current_code = scad_code.text.clone();
     let model_name = ai_config.model_name.clone();
-    let api_key = if ai_config.api_key.is_empty() {
+    let current_key = ai_config.api_key().to_string();
+    let api_key = if current_key.is_empty() {
         None
     } else {
-        Some(ai_config.api_key.clone())
+        Some(current_key)
     };
     let system_prompt = ai_config.system_prompt.clone();
     let temperature = ai_config.temperature;

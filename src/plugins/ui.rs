@@ -1165,7 +1165,7 @@ fn ui_layout_system(
                 let env_key_set = env_var_for_adapter(&ai_config.adapter_name)
                     .and_then(|name| std::env::var(name).ok())
                     .is_some_and(|v| !v.is_empty());
-                let has_key = !needs_key || env_key_set || !ai_config.api_key.is_empty();
+                let has_key = !needs_key || env_key_set || !ai_config.api_key().is_empty();
 
                 if !has_key {
                     ui.colored_label(
@@ -1210,15 +1210,16 @@ fn ui_layout_system(
                     .and_then(|name| std::env::var(name).ok())
                     .is_some_and(|v| !v.is_empty());
 
-                if env_var_set && ai_config.api_key.is_empty() {
+                if env_var_set && ai_config.api_key().is_empty() {
                     ui.add_enabled(
                         false,
                         egui::TextEdit::singleline(&mut String::new())
                             .hint_text(format!("Set via {}", env_var_name.unwrap_or(""))),
                     );
                 } else {
+                    let key = ai_config.api_key_mut();
                     ui.add(
-                        egui::TextEdit::singleline(&mut ai_config.api_key)
+                        egui::TextEdit::singleline(key)
                             .password(true)
                             .hint_text(if env_var_set { "Override env var" } else { "Enter API key" }),
                     );
@@ -1226,7 +1227,7 @@ fn ui_layout_system(
             });
             if let Some(env_name) = env_var_for_adapter(&ai_config.adapter_name) {
                 let env_set = std::env::var(env_name).ok().is_some_and(|v| !v.is_empty());
-                if env_set && !ai_config.api_key.is_empty() {
+                if env_set && !ai_config.api_key().is_empty() {
                     ui.label(
                         egui::RichText::new(format!("⚠ Overriding {env_name} for this session"))
                             .color(egui::Color32::from_rgb(255, 180, 50))

@@ -44,8 +44,9 @@ struct PersistentData {
     editor_code: String,
     #[serde(default = "default_verification_rounds")]
     max_verification_rounds: u32,
+    /// Per-provider API keys (adapter_name → key).
     #[serde(default)]
-    api_key: String,
+    api_keys: std::collections::HashMap<String, String>,
     #[serde(default)]
     ui: UiSettings,
     /// Legacy: old multi-part data. Merged into `editor_code` on load.
@@ -115,7 +116,7 @@ fn load_session_system(
     }
     ai_config.temperature = saved.temperature;
     ai_config.max_verification_rounds = saved.max_verification_rounds;
-    ai_config.api_key = saved.api_key;
+    ai_config.api_keys = saved.api_keys;
 
     label_vis.visible = saved.ui.show_labels;
 
@@ -275,7 +276,7 @@ fn save_session(ai_config: &AiConfig, chat_state: &ChatState, scad_code: &ScadCo
         temperature: ai_config.temperature,
         editor_code: scad_code.text.clone(),
         max_verification_rounds: ai_config.max_verification_rounds,
-        api_key: ai_config.api_key.clone(),
+        api_keys: ai_config.api_keys.clone(),
         ui: UiSettings {
             show_labels: label_vis.visible,
         },
