@@ -47,6 +47,9 @@ struct PersistentData {
     /// Per-provider API keys (adapter_name → key).
     #[serde(default)]
     api_keys: std::collections::HashMap<String, String>,
+    /// Per-provider last-used model (adapter_name → model_name).
+    #[serde(default)]
+    model_per_provider: std::collections::HashMap<String, String>,
     #[serde(default)]
     ui: UiSettings,
     /// Legacy: old multi-part data. Merged into `editor_code` on load.
@@ -117,6 +120,7 @@ fn load_session_system(
     ai_config.temperature = saved.temperature;
     ai_config.max_verification_rounds = saved.max_verification_rounds;
     ai_config.api_keys = saved.api_keys;
+    ai_config.model_per_provider = saved.model_per_provider;
 
     label_vis.visible = saved.ui.show_labels;
 
@@ -277,6 +281,7 @@ fn save_session(ai_config: &AiConfig, chat_state: &ChatState, scad_code: &ScadCo
         editor_code: scad_code.text.clone(),
         max_verification_rounds: ai_config.max_verification_rounds,
         api_keys: ai_config.api_keys.clone(),
+        model_per_provider: ai_config.model_per_provider.clone(),
         ui: UiSettings {
             show_labels: label_vis.visible,
         },

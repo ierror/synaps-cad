@@ -86,6 +86,8 @@ pub struct AiConfig {
     pub model_name: String,
     /// Per-provider API keys (adapter_name → key).
     pub api_keys: std::collections::HashMap<String, String>,
+    /// Per-provider last-used model (adapter_name → model_name).
+    pub model_per_provider: std::collections::HashMap<String, String>,
     pub system_prompt: String,
     pub temperature: f64,
     /// Maximum automatic verification rounds (u32::MAX = unlimited).
@@ -115,6 +117,7 @@ impl Default for AiConfig {
             adapter_name: "Anthropic".into(),
             model_name: "claude-3-5-sonnet-latest".into(),
             api_keys: std::collections::HashMap::new(),
+            model_per_provider: std::collections::HashMap::new(),
             system_prompt: DEFAULT_SYSTEM_PROMPT.into(),
             temperature: 0.7,
             max_verification_rounds: 2,

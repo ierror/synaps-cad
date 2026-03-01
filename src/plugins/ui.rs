@@ -1146,6 +1146,7 @@ fn ui_layout_system(
             }
             ui.horizontal(|ui| {
                 ui.label("Provider:");
+                let prev_adapter = ai_config.adapter_name.clone();
                 egui::ComboBox::from_id_salt("ai_adapter_select")
                     .selected_text(&ai_config.adapter_name)
                     .show_ui(ui, |ui| {
@@ -1157,6 +1158,19 @@ fn ui_layout_system(
                             );
                         }
                     });
+                // Save current model for old provider, restore for new provider
+                if ai_config.adapter_name != prev_adapter {
+                    let model = ai_config.model_name.clone();
+                    if !model.is_empty() {
+                        ai_config.model_per_provider.insert(prev_adapter, model);
+                    }
+                    let new_adapter = ai_config.adapter_name.clone();
+                    ai_config.model_name = ai_config
+                        .model_per_provider
+                        .get(&new_adapter)
+                        .cloned()
+                        .unwrap_or_default();
+                }
             });
             ui.horizontal(|ui| {
                 ui.label("Model:");
