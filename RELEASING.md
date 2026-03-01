@@ -27,11 +27,12 @@ cargo release patch --execute
 
 This will:
 
-1. Bump the version in `Cargo.toml`
+1. Bump the version in `Cargo.toml` (the only place the version is hardcoded)
 2. Commit the version bump
 3. Create a git tag (`vX.Y.Z`)
-4. Publish to crates.io
-5. Push the commit and tag to GitHub
+4. Push the commit and tag to GitHub
+
+> **Note:** `cargo release` handles the `Cargo.toml` version automatically. The macOS `Info.plist` uses a `${APP_VERSION}` placeholder that CI replaces with the version from the git tag — no manual version bumping needed beyond `cargo release`.
 
 ## What happens next
 
@@ -43,6 +44,7 @@ Once the tag is pushed, the GitHub Actions release workflow (`.github/workflows/
    - macOS Intel (x86_64)
    - Windows x86_64
 2. Packages them as `.tar.gz` (Linux/macOS) or `.zip` (Windows)
-3. Creates a GitHub Release with auto-generated release notes and all artifacts attached
+3. Injects the version from the git tag into `Info.plist` for macOS `.app` bundles
+4. Creates a GitHub Release with changelog notes and all artifacts attached
 
 You can monitor the workflow run at **Actions > Release** in the GitHub repository.
