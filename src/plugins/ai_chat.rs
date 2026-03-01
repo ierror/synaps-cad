@@ -814,6 +814,7 @@ fn ai_receive_system(
                 });
                 chat_state.is_streaming = false;
                 chat_state.stream_receiver = None;
+                chat_state.verification = VerificationState::Idle;
                 return;
             }
         }
