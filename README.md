@@ -28,6 +28,14 @@
   </a>
 </p>
 
+<p align="center">
+  <a href="assets/2026-03-01_slideshow.webp">
+    <img src="assets/2026-03-01_slideshow.webp" alt="See SynapsCAD in action" width="100%" />
+  </a>
+  <br>
+  <em>▶ See it in action</em>
+</p>
+
 ## Overview
 
 A desktop 3D CAD application that combines an OpenSCAD code editor, a real-time 3D viewport, and an AI assistant. Write OpenSCAD code, compile it to 3D models, visualize them interactively, and use AI to modify your designs through natural language — including context from 3D click interactions.
