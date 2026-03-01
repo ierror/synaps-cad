@@ -539,10 +539,42 @@ fn ui_layout_system(
     mut settings_open: ResMut<SettingsDialogOpen>,
     last_parts: Res<LastCompiledParts>,
     mut export_state: ResMut<ExportState>,
+    model_views: Res<super::compilation::ModelViews>,
+    mut cached_view_textures: Local<Vec<(String, egui::TextureHandle)>>,
 ) {
     let Some(ctx) = contexts.try_ctx_mut() else {
         return;
     };
+
+    // Cache view textures so they persist across frames (GPU upload is deferred)
+    if model_views.is_changed() {
+        use base64::Engine;
+        let mut new_textures = Vec::new();
+        for (label, base64_png) in &model_views.views {
+            if base64_png.is_empty() {
+                continue;
+            }
+            if let Ok(png_bytes) =
+                base64::engine::general_purpose::STANDARD.decode(base64_png)
+            {
+                if let Ok(dyn_img) = image::load_from_memory(&png_bytes) {
+                    let rgba = dyn_img.to_rgba8();
+                    let (w, h) = (rgba.width(), rgba.height());
+                    let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                        [w as usize, h as usize],
+                        rgba.as_raw(),
+                    );
+                    let texture = ctx.load_texture(
+                        format!("view_cycle_{label}"),
+                        color_image,
+                        egui::TextureOptions::LINEAR,
+                    );
+                    new_textures.push((label.clone(), texture));
+                }
+            }
+        }
+        *cached_view_textures = new_textures;
+    }
 
     let panel = egui::SidePanel::left("side_panel")
         .default_width(400.0)
@@ -789,7 +821,49 @@ fn ui_layout_system(
             .show(ui, |ui| {
                 // Status indicators at top (newest-first layout)
                 if chat_state.is_streaming {
-                    ui.spinner();
+                    // While waiting for first response, cycle through sent view images
+                    let no_response_yet = !chat_state
+                        .messages
+                        .last()
+                        .is_some_and(|m| m.role == "assistant" && !m.content.is_empty());
+                    if no_response_yet && !cached_view_textures.is_empty() {
+                        let elapsed = ui.input(|i| i.time);
+                        let cycle_speed = 1.5; // seconds per image
+                        let view_idx =
+                            (elapsed / cycle_speed) as usize % cached_view_textures.len();
+                        let (label, texture) = &cached_view_textures[view_idx];
+                        let display_size = 180.0;
+                        ui.vertical_centered(|ui| {
+                            egui::Frame::new()
+                                .stroke(egui::Stroke::new(
+                                    1.0,
+                                    egui::Color32::from_rgb(80, 80, 100),
+                                ))
+                                .corner_radius(egui::CornerRadius::same(4))
+                                .inner_margin(egui::Margin::same(4))
+                                .show(ui, |ui| {
+                                    let img_resp = ui.image(egui::load::SizedTexture::new(
+                                        texture.id(),
+                                        egui::vec2(display_size, display_size),
+                                    ));
+                                    // Overlay a spinner centered on the image
+                                    let center = img_resp.rect.center();
+                                    let spinner_size = egui::vec2(24.0, 24.0);
+                                    let spinner_rect = egui::Rect::from_center_size(center, spinner_size);
+                                    ui.put(spinner_rect, egui::Spinner::new());
+                                });
+                            ui.label(
+                                egui::RichText::new(format!("📷 {label}"))
+                                    .small()
+                                    .color(egui::Color32::from_rgb(140, 140, 160)),
+                            );
+                        });
+                        ui.ctx().request_repaint_after(
+                            std::time::Duration::from_millis(100),
+                        );
+                    } else {
+                        ui.spinner();
+                    }
                 }
                 match &chat_state.verification {
                     super::ai_chat::VerificationState::WaitingForCompilation => {

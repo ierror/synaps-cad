@@ -79,6 +79,8 @@ pub enum CompilationResult {
     Success {
         parts: Vec<StlMeshData>,
         views: Vec<(String, String)>, // (label, base64_png)
+        /// Views for non-active `$view` branches.
+        other_views: Vec<(String, Vec<(String, String)>)>,
         warnings: Vec<String>,
     },
     Error(String),
@@ -93,7 +95,10 @@ pub struct CompilationState {
 /// Rendered orthographic views of the model (for AI context).
 #[derive(Resource, Default)]
 pub struct ModelViews {
-    pub views: Vec<(String, String)>, // (label, base64_png)
+    pub views: Vec<(String, String)>, // (label, base64_png) for active view
+    /// Views rendered for non-active `$view` branches (smaller resolution).
+    /// Each entry is (view_name, Vec<(label, base64_png)>).
+    pub other_views: Vec<(String, Vec<(String, String)>)>,
 }
 
 /// Cached copy of last compiled mesh data for re-rendering views with markers.
@@ -148,11 +153,14 @@ fn trigger_compilation_system(
 }
 
 fn compile_openscad(code: &str) -> CompilationResult {
+    use super::code_editor::{detect_views, set_active_view};
+
     // Empty code → clear the viewport (no error, just zero parts)
     if code.trim().is_empty() {
         return CompilationResult::Success {
             parts: Vec::new(),
             views: Vec::new(),
+            other_views: Vec::new(),
             warnings: Vec::new(),
         };
     }
@@ -201,6 +209,36 @@ fn compile_openscad(code: &str) -> CompilationResult {
                     eprintln!("[SynapsCAD] Warning: {w}");
                 }
             }
+
+            // Render views for non-active $view branches at smaller resolution
+            let (active_view, all_views) = detect_views(code);
+            let mut other_views = Vec::new();
+            if all_views.len() > 1 {
+                let active = active_view.unwrap_or_default();
+                for view_name in &all_views {
+                    if *view_name == active {
+                        continue;
+                    }
+                    let mut alt_code = code.to_string();
+                    if set_active_view(&mut alt_code, view_name) {
+                        let alt_views = compiler::compile_views_only(&alt_code, 128);
+                        if !alt_views.is_empty() {
+                            other_views.push((
+                                view_name.clone(),
+                                alt_views.into_iter().map(|v| (v.label, v.base64_png)).collect(),
+                            ));
+                        }
+                    }
+                }
+                if !other_views.is_empty() {
+                    eprintln!(
+                        "[SynapsCAD] Rendered {} other view(s) in {:?}",
+                        other_views.len(),
+                        t0.elapsed()
+                    );
+                }
+            }
+
             CompilationResult::Success {
                 parts: parts
                     .into_iter()
@@ -212,6 +250,7 @@ fn compile_openscad(code: &str) -> CompilationResult {
                     })
                     .collect(),
                 views: views.into_iter().map(|v| (v.label, v.base64_png)).collect(),
+                other_views,
                 warnings,
             }
         }
@@ -259,6 +298,7 @@ fn poll_compilation_system(
         CompilationResult::Success {
             parts,
             views,
+            other_views,
             warnings,
         } => {
             for entity in model_query.iter() {
@@ -286,6 +326,7 @@ fn poll_compilation_system(
             }
 
             model_views.views = views;
+            model_views.other_views = other_views;
             last_compiled.parts.clone_from(&parts);
 
             for (i, stl_data) in parts.into_iter().enumerate() {

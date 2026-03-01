@@ -1,6 +1,6 @@
 .DS_Store
 /target/
-/var/tmp/
+/var/
 
 /TODO.md
 *.app

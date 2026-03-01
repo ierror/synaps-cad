@@ -381,6 +381,7 @@ fn ai_send_system(
     let system_prompt = ai_config.system_prompt.clone();
     let temperature = ai_config.temperature;
     let views = model_views.views.clone();
+    let other_views = model_views.other_views.clone();
 
     let (tx, rx) = mpsc::channel();
     chat_state.stream_receiver = Some(Mutex::new(rx));
@@ -402,6 +403,7 @@ fn ai_send_system(
             &system_prompt,
             temperature,
             &views,
+            &other_views,
             part_context,
             &user_images,
             tx.clone(),
@@ -425,6 +427,7 @@ async fn run_ai_stream(
     base_system_prompt: &str,
     temperature: f64,
     views: &[(String, String)],
+    other_views: &[(String, Vec<(String, String)>)],
     part_context: String,
     user_images: &[ChatImage],
     tx: mpsc::Sender<AiStreamChunk>,
@@ -518,6 +521,27 @@ async fn run_ai_stream(
         }
     }
 
+    // Attach views from other $view branches (smaller resolution)
+    if !other_views.is_empty() {
+        for (view_name, view_images) in other_views {
+            let mut parts = vec![ContentPart::from_text(
+                format!("Rendered views for $view \"{view_name}\":"),
+            )];
+            for (label, base64_png) in view_images {
+                if !base64_png.is_empty() {
+                    parts.push(ContentPart::from_text(format!("{label}:")));
+                    parts.push(ContentPart::from_binary_base64(
+                        "image/png",
+                        base64_png.as_str(),
+                        Some(format!("{view_name}_{label}_view.png")),
+                    ));
+                }
+            }
+            let view_msg = GenaiMessage::user(MessageContent::from_parts(parts));
+            chat_req = chat_req.append_message(view_msg);
+        }
+    }
+
     // Attach user-provided reference images
     if !user_images.is_empty() {
         let mut parts = vec![ContentPart::from_text("User-attached reference images:")];
@@ -535,6 +559,7 @@ async fn run_ai_stream(
 
     // Ensure the conversation ends with a user message (some APIs require this)
     let ends_with_user = !views.is_empty()
+        || !other_views.is_empty()
         || !user_images.is_empty()
         || messages.last().is_some_and(|m| m.role == "user");
     if !ends_with_user {

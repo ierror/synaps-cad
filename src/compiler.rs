@@ -322,6 +322,38 @@ impl Shape {
     }
 }
 
+/// Compile code and return only the rendered views (no mesh data).
+/// Used for rendering non-active `$view` branches at smaller resolution.
+pub fn compile_views_only(code: &str, size: u32) -> Vec<ViewImage> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let source_file = match openscad_rs::parse(code) {
+            Ok(sf) => sf,
+            Err(_) => return Vec::new(),
+        };
+        let mut evaluator = Evaluator::new();
+        let shapes = evaluator.eval_source_file(&source_file);
+        let mut parts = Vec::new();
+        for (i, (shape, color)) in shapes.into_iter().enumerate() {
+            if let Shape::Failed(_) = &shape {
+                continue;
+            }
+            if let Ok(mut data) = bmesh_to_mesh_data(&shape.into_bmesh()) {
+                data.color = color;
+                parts.push(data);
+            }
+            // Limit to avoid excessive compile time for non-active views
+            if i >= 50 {
+                break;
+            }
+        }
+        if parts.is_empty() {
+            return Vec::new();
+        }
+        render_orthographic_views_sized(&parts, size)
+    }));
+    result.unwrap_or_default()
+}
+
 /// Compile `OpenSCAD` source code into triangle mesh data.
 pub fn compile_scad_code(code: &str) -> CompilationResult {
     let source_file = match openscad_rs::parse(code) {
@@ -571,7 +603,7 @@ fn bmesh_to_mesh_data(bmesh: &BMesh<()>) -> Result<MeshData, String> {
 // ---------------------------------------------------------------------------
 
 const VIEW_SIZE: u32 = 256;
-const BG_COLOR: [u8; 3] = [30, 30, 30];
+const BG_COLOR: [u8; 3] = [50, 50, 60];
 
 struct ProjectedTri {
     verts: [(f32, f32, f32); 3], // (screen_x, screen_y, depth)
@@ -596,6 +628,11 @@ const VIEW_PART_PALETTE: &[[f32; 3]] = &[
 ];
 
 fn render_orthographic_views(parts: &[MeshData]) -> Vec<ViewImage> {
+    render_orthographic_views_sized(parts, VIEW_SIZE)
+}
+
+/// Render orthographic + isometric views at the given pixel size.
+fn render_orthographic_views_sized(parts: &[MeshData], size: u32) -> Vec<ViewImage> {
     // Build per-part buffers with color tracking
     let mut all_pos = Vec::new();
     let mut all_norm = Vec::new();
@@ -628,7 +665,7 @@ fn render_orthographic_views(parts: &[MeshData]) -> Vec<ViewImage> {
         .iter()
         .map(|(label, axes, flips)| {
             let base64_png =
-                render_single_view(&all_pos, &all_norm, &all_idx, &tri_colors, *axes, *flips);
+                render_single_view(&all_pos, &all_norm, &all_idx, &tri_colors, *axes, *flips, size);
             ViewImage {
                 label: (*label).to_string(),
                 base64_png,
@@ -637,7 +674,7 @@ fn render_orthographic_views(parts: &[MeshData]) -> Vec<ViewImage> {
         .collect();
 
     // Add isometric view (rotated projection)
-    let iso_png = render_iso_view(&all_pos, &all_norm, &all_idx, &tri_colors);
+    let iso_png = render_iso_view(&all_pos, &all_norm, &all_idx, &tri_colors, size);
     result.push(ViewImage {
         label: "Iso".to_string(),
         base64_png: iso_png,
@@ -653,10 +690,11 @@ fn render_iso_view(
     normals: &[[f32; 3]],
     indices: &[u32],
     tri_colors: &[[f32; 3]],
+    view_size: u32,
 ) -> String {
     use base64::Engine;
 
-    let size = VIEW_SIZE as usize;
+    let size = view_size as usize;
     let margin = 0.1;
 
     // Isometric rotation: rotate 45° around Y, then ~35.264° around X
@@ -765,7 +803,7 @@ fn render_iso_view(
         }
     }
 
-    let mut img_buf = image::RgbImage::new(VIEW_SIZE, VIEW_SIZE);
+    let mut img_buf = image::RgbImage::new(view_size, view_size);
     for (i, px) in pixels.iter().enumerate() {
         let x = (i % size) as u32;
         let y = (i / size) as u32;
@@ -777,8 +815,8 @@ fn render_iso_view(
     image::ImageEncoder::write_image(
         encoder,
         img_buf.as_raw(),
-        VIEW_SIZE,
-        VIEW_SIZE,
+        view_size,
+        view_size,
         image::ExtendedColorType::Rgb8,
     )
     .expect("PNG encoding failed");
@@ -792,12 +830,13 @@ fn render_single_view(
     normals: &[[f32; 3]],
     indices: &[u32],
     tri_colors: &[[f32; 3]],
-    axes: [usize; 3], // [screen_x_axis, screen_y_axis, depth_axis]
-    flips: [f32; 3],  // sign multipliers for each mapped axis
+    axes: [usize; 3],
+    flips: [f32; 3],
+    view_size: u32,
 ) -> String {
     use base64::Engine;
 
-    let size = VIEW_SIZE as usize;
+    let size = view_size as usize;
     let margin = 0.1; // 10% margin on each side
 
     // Project vertices
@@ -909,7 +948,7 @@ fn render_single_view(
     }
 
     // Encode to PNG
-    let mut img_buf = image::RgbImage::new(VIEW_SIZE, VIEW_SIZE);
+    let mut img_buf = image::RgbImage::new(view_size, view_size);
     for (i, px) in pixels.iter().enumerate() {
         let x = (i % size) as u32;
         let y = (i / size) as u32;
@@ -921,8 +960,8 @@ fn render_single_view(
     image::ImageEncoder::write_image(
         encoder,
         img_buf.as_raw(),
-        VIEW_SIZE,
-        VIEW_SIZE,
+        view_size,
+        view_size,
         image::ExtendedColorType::Rgb8,
     )
     .expect("PNG encoding failed");
