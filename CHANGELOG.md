@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - 2026-03-01
+
+### Fixed
+
+- **Per-provider API keys** — each AI provider (Anthropic, OpenAI, Gemini, etc.) now stores its own API key; switching providers no longer loses your key
+- **Per-provider model memory** — switching between providers remembers your last-used model for each
+- **Multi-view context for AI** — when using `$view` branches, all views are rendered and sent to the AI as context (non-active views at 128px for efficiency)
+- **View image cycling with spinner** — while waiting for AI response, cycles through rendered model views with a spinner overlay
+- **Stale view images after code clear** — clearing code now properly clears cached view textures instead of showing old images
+- **View cycling images not displaying** — textures are now cached across frames for proper GPU upload instead of re-created each frame
+
 ## [0.5.0] - 2026-02-28
 
 ### Added
