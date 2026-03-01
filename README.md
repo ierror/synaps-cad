@@ -18,8 +18,6 @@
 
 > ⚠️ **Early Prototype** — Not all OpenSCAD code will compile correctly yet. Start with simple models and expect rough edges. Bug reports with code snippets that cause issues are very welcome!
 
-<br>
-
 ## See SynapsCAD in Action
 
 <p align="center">
@@ -28,12 +26,11 @@
   </a>
 </p>
 
+<br/>
 <p align="center">
   <a href="assets/2026-03-01_slideshow.webp">
-    <img src="assets/2026-03-01_slideshow.webp" alt="See SynapsCAD in action" width="100%" />
+      <em>▶ See it in action</em>
   </a>
-  <br>
-  <em>▶ See it in action</em>
 </p>
 
 ## Overview
