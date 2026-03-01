@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.2] - 2026-03-01
+
+### Fixed
+
+- **Non-manifold mesh fallback** — parts that fail manifold creation (e.g. thin `linear_extrude`) now render via direct polygon conversion instead of being silently dropped
+- **Removed unsafe code** — bumped `genai` to 0.6.0-beta.3 which threads auth resolver through `all_model_names()`, eliminating the `set_var` workaround; `unsafe_code` lint reverted to `forbid`
+- **Verification state reset** — verification state now properly resets to Idle after AI streaming ends
+
 ## [0.5.1] - 2026-03-01
 
 ### Fixed
