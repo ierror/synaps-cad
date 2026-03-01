@@ -324,6 +324,7 @@ async fn fetch_model_names(
 ) -> Result<Vec<String>, String> {
     use genai::Client;
     use genai::adapter::AdapterKind;
+    use genai::resolver::AuthData;
 
     let adapter_kind = match adapter_name {
         "OpenAI" => AdapterKind::OpenAI,
@@ -340,35 +341,18 @@ async fn fetch_model_names(
         other => return Err(format!("Unknown adapter: {other}")),
     };
 
-    // genai's all_model_names() uses default_auth() (env var) and ignores the
-    // client's auth resolver. Temporarily set the env var when a UI key is provided.
-    // SAFETY: This runs on a single-threaded tokio task. No other code reads these
-    // env vars concurrently in a way that would cause unsoundness.
-    let env_var = env_var_for_adapter(adapter_name);
-    let prev_env = env_var.map(|name| (name, std::env::var(name).ok()));
-    if let (Some(key), Some(name)) = (api_key, env_var) {
-        #[allow(unsafe_code)]
-        unsafe {
-            std::env::set_var(name, key);
-        }
-    }
+    let client = api_key.map_or_else(Client::default, |key| {
+        let key = key.to_string();
+        Client::builder()
+            .with_auth_resolver_fn(move |_| Ok(Some(AuthData::Key(key.clone()))))
+            .build()
+    });
 
-    let client = Client::default();
-    let result = match client.all_model_names(adapter_kind).await {
+    match client.all_model_names(adapter_kind).await {
         Ok(models) if !models.is_empty() => Ok(models),
         Ok(_) => Err("No models returned. Check your API key.".into()),
         Err(e) => Err(format!("Failed to fetch models: {e}")),
-    };
-
-    // Restore previous env var state
-    if let Some((name, prev)) = prev_env {
-        #[allow(unsafe_code)]
-        unsafe {
-            std::env::set_var(name, prev.as_deref().unwrap_or(""));
-        }
     }
-
-    result
 }
 
 

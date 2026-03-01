@@ -12,7 +12,7 @@ publish = false
 [dependencies]
 bevy = "0.15"
 bevy_egui = "0.33"
-genai = "=0.6.0-beta.2"
+genai = "=0.6.0-beta.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "process"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -33,10 +33,7 @@ rfd = "0.17.2"
 winresource = "0.1"
 
 [lints.rust]
-# "deny" instead of "forbid" to allow #[allow(unsafe_code)] in ai_chat.rs where
-# genai requires std::env::set_var (unsafe in edition 2024) for model listing.
-# Revert to "forbid" if genai adds auth-resolver support for all_model_names().
-unsafe_code = "deny"
+unsafe_code = "forbid"
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
