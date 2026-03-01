@@ -151,6 +151,9 @@ fn named_color(name: &str) -> Option<[f32; 3]> {
 enum Shape {
     Mesh3D(Box<BMesh<()>>),
     Sketch2D(Sketch<()>),
+    /// Render-only fallback: CsgMesh that failed manifold creation.
+    /// Can be rendered directly but boolean ops will degrade to empty.
+    FallbackMesh(CsgMesh<()>),
     /// A boolean operation panicked — propagate failure to avoid cascading panics.
     Failed(String),
 }
@@ -160,6 +163,7 @@ impl fmt::Debug for Shape {
         match self {
             Self::Mesh3D(_) => write!(f, "Shape::Mesh3D"),
             Self::Sketch2D(_) => write!(f, "Shape::Sketch2D"),
+            Self::FallbackMesh(_) => write!(f, "Shape::FallbackMesh"),
             Self::Failed(e) => write!(f, "Shape::Failed({e})"),
         }
     }
@@ -167,13 +171,16 @@ impl fmt::Debug for Shape {
 
 impl Shape {
     /// Create a 3D shape from a `CsgMesh` primitive.
-    /// Returns empty mesh if manifold creation fails (error surfaces later in bmesh_to_mesh_data).
+    /// Falls back to direct polygon rendering if manifold creation fails (still renders,
+    /// but boolean ops on it may produce artifacts).
     fn from_csg_mesh(mesh: CsgMesh<()>) -> Self {
-        match csg_mesh_to_bmesh(mesh) {
+        match csg_mesh_to_bmesh(&mesh) {
             Ok(bmesh) => Self::Mesh3D(Box::new(bmesh)),
             Err(e) => {
-                eprintln!("[SynapsCAD] {e}");
-                Self::Mesh3D(Box::new(BMesh::new()))
+                if cfg!(debug_assertions) {
+                    eprintln!("[DEBUG] Manifold failed ({e}), using polygon fallback");
+                }
+                Self::FallbackMesh(mesh)
             }
         }
     }
@@ -183,7 +190,7 @@ impl Shape {
         match self {
             Self::Mesh3D(b) => *b,
             Self::Sketch2D(s) => BMesh::from(s.extrude(0.01)),
-            Self::Failed(_) => BMesh::new(),
+            Self::FallbackMesh(_) | Self::Failed(_) => BMesh::new(),
         }
     }
 
@@ -192,6 +199,7 @@ impl Shape {
         match self {
             Self::Mesh3D(b) => bmesh_to_csg_mesh(&b),
             Self::Sketch2D(s) => s.extrude(0.01),
+            Self::FallbackMesh(m) => m,
             Self::Failed(_) => CsgMesh::new(),
         }
     }
@@ -229,8 +237,8 @@ impl Shape {
         let b_csg = b.into_csg_mesh();
 
         // Try boolmesh path: CsgMesh → BMesh → boolean → Shape
-        let a_bmesh = csg_mesh_to_bmesh(a_csg.clone());
-        let b_bmesh = csg_mesh_to_bmesh(b_csg.clone());
+        let a_bmesh = csg_mesh_to_bmesh(&a_csg);
+        let b_bmesh = csg_mesh_to_bmesh(&b_csg);
 
         if let (Ok(ab), Ok(bb)) = (a_bmesh, b_bmesh) {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -267,6 +275,7 @@ impl Shape {
                     Self::from_csg_mesh(s.extrude(0.01).translate(x, y, z))
                 }
             }
+            Self::FallbackMesh(m) => Self::FallbackMesh(m.translate(x, y, z)),
             Self::Failed(e) => Self::Failed(e),
         }
     }
@@ -281,6 +290,7 @@ impl Shape {
                     Self::from_csg_mesh(s.extrude(0.01).rotate(x, y, z))
                 }
             }
+            Self::FallbackMesh(m) => Self::FallbackMesh(m.rotate(x, y, z)),
             Self::Failed(e) => Self::Failed(e),
         }
     }
@@ -295,6 +305,7 @@ impl Shape {
                     Self::from_csg_mesh(s.extrude(0.01).scale(sx, sy, sz))
                 }
             }
+            Self::FallbackMesh(m) => Self::FallbackMesh(m.scale(sx, sy, sz)),
             Self::Failed(e) => Self::Failed(e),
         }
     }
@@ -308,6 +319,7 @@ impl Shape {
         match self {
             Self::Mesh3D(m) => Self::Mesh3D(Box::new(m.mirror(plane))),
             Self::Sketch2D(s) => Self::Sketch2D(s.mirror(plane)),
+            Self::FallbackMesh(m) => Self::FallbackMesh(m.mirror(plane)),
             Self::Failed(e) => Self::Failed(e),
         }
     }
@@ -317,6 +329,7 @@ impl Shape {
         match self {
             Self::Mesh3D(m) => Self::Mesh3D(Box::new(m.center())),
             Self::Sketch2D(s) => Self::Sketch2D(s.center()),
+            Self::FallbackMesh(m) => Self::FallbackMesh(m.center()),
             Self::Failed(e) => Self::Failed(e),
         }
     }
@@ -337,7 +350,12 @@ pub fn compile_views_only(code: &str, size: u32) -> Vec<ViewImage> {
             if let Shape::Failed(_) = &shape {
                 continue;
             }
-            if let Ok(mut data) = bmesh_to_mesh_data(&shape.into_bmesh()) {
+            let mesh_result = if let Shape::FallbackMesh(ref mesh) = shape {
+                csg_mesh_to_mesh_data(mesh)
+            } else {
+                bmesh_to_mesh_data(&shape.into_bmesh())
+            };
+            if let Ok(mut data) = mesh_result {
                 data.color = color;
                 parts.push(data);
             }
@@ -380,7 +398,12 @@ pub fn compile_scad_code(code: &str) -> CompilationResult {
                 warnings.push(format!("Part {}: {e}. This is a bug in a dependency — please report it with your code.", i + 1));
                 continue;
             }
-            match bmesh_to_mesh_data(&shape.into_bmesh()) {
+            let mesh_result = if let Shape::FallbackMesh(ref mesh) = shape {
+                csg_mesh_to_mesh_data(mesh)
+            } else {
+                bmesh_to_mesh_data(&shape.into_bmesh())
+            };
+            match mesh_result {
                 Ok(mut data) => {
                     data.color = color;
                     parts.push(data);
@@ -433,7 +456,7 @@ pub fn compile_scad_code(code: &str) -> CompilationResult {
 /// Convert `CsgMesh` to `BMesh`. If the mesh has boundary edges (non-manifold),
 /// attempts to fix it by deduplicating vertices and removing degenerate/duplicate triangles.
 /// Returns an error if all repair attempts fail.
-fn csg_mesh_to_bmesh(mesh: CsgMesh<()>) -> Result<BMesh<()>, String> {
+fn csg_mesh_to_bmesh(mesh: &CsgMesh<()>) -> Result<BMesh<()>, String> {
     use boolmesh::prelude::Manifold;
     const QUANT: f64 = 1e6;
 
@@ -585,6 +608,63 @@ fn bmesh_to_mesh_data(bmesh: &BMesh<()>) -> Result<MeshData, String> {
         indices.push(idx + 1);
         indices.push(idx + 2);
     });
+
+    if positions.is_empty() {
+        return Err("Mesh has no vertices".into());
+    }
+
+    Ok(MeshData {
+        positions,
+        normals,
+        indices,
+        color: None,
+    })
+}
+
+/// Direct CsgMesh → MeshData conversion, bypassing BMesh/Manifold.
+/// Used as a fallback when manifold creation fails (e.g. thin extrudes).
+fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut indices = Vec::new();
+
+    for poly in &mesh.polygons {
+        let n = poly.vertices.len();
+        if n < 3 {
+            continue;
+        }
+        // Fan triangulation from vertex 0
+        let p0 = &poly.vertices[0].position;
+        for j in 1..n - 1 {
+            let p1 = &poly.vertices[j].position;
+            let p2 = &poly.vertices[j + 1].position;
+            let idx = positions.len() as u32;
+            // OpenSCAD Z-up → Bevy Y-up: swap Y and Z
+            for p in [p0, p1, p2] {
+                positions.push([p.x as f32, p.z as f32, p.y as f32]);
+            }
+            let a = positions[idx as usize];
+            let b = positions[idx as usize + 1];
+            let c = positions[idx as usize + 2];
+            let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+            let ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+            let cross = [
+                ab[1].mul_add(ac[2], -(ab[2] * ac[1])),
+                ab[2].mul_add(ac[0], -(ab[0] * ac[2])),
+                ab[0].mul_add(ac[1], -(ab[1] * ac[0])),
+            ];
+            let len = cross[0]
+                .mul_add(cross[0], cross[1].mul_add(cross[1], cross[2] * cross[2]))
+                .sqrt();
+            let normal = if len > 1e-6 {
+                [cross[0] / len, cross[1] / len, cross[2] / len]
+            } else {
+                [0.0, 1.0, 0.0]
+            };
+            normals.extend([normal, normal, normal]);
+            indices.extend([idx, idx + 1, idx + 2]);
+        }
+    }
 
     if positions.is_empty() {
         return Err("Mesh has no vertices".into());
@@ -2132,7 +2212,7 @@ impl Evaluator {
                 Shape::Sketch2D(s) => {
                     result = Some(result.map_or_else(|| s.clone(), |r| r.union(s)));
                 }
-                Shape::Mesh3D(_) => {
+                Shape::Mesh3D(_) | Shape::FallbackMesh(_) => {
                     self.warnings
                         .push("3D mesh child inside extrude, skipping".into());
                 }
@@ -4671,6 +4751,27 @@ if ($view == "tray") view_tray();
                 );
             }
             CompilationResult::Error(e) => panic!("RoundedSquare compilation failed: {e}"),
+        }
+    }
+
+    #[test]
+    fn test_thin_linear_extrude_fallback() {
+        // Very thin linear_extrude can fail manifold creation; the non-manifold
+        // fallback should still produce renderable geometry (no "Mesh has no vertices").
+        let code = r#"
+            linear_extrude(0.5)
+                polygon([[0,0], [10, 5], [25, 0], [10, -5]]);
+        "#;
+        let result = compile_scad_code(code);
+        match result {
+            CompilationResult::Success { parts, warnings, .. } => {
+                assert!(!parts.is_empty(), "Thin extrude should produce geometry via fallback");
+                assert!(
+                    !warnings.iter().any(|w| w.contains("no vertices")),
+                    "Should not warn about missing vertices: {warnings:?}"
+                );
+            }
+            CompilationResult::Error(e) => panic!("Thin extrude should not fail: {e}"),
         }
     }
 }
