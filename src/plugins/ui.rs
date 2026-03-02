@@ -687,7 +687,7 @@ fn ui_layout_system(
                                     .sense(egui::Sense::click()),
                                 ).on_hover_text("Click to copy")
                                 .on_hover_cursor(egui::CursorIcon::PointingHand);
-                                if ui.small_button("x").clicked() {
+                                if ui.small_button("x").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                                     to_remove = Some(i);
                                 }
                                 label_resp
@@ -1896,13 +1896,15 @@ fn cheatsheet_system(
         return;
     };
 
-    // Toggle with ? key (Slash + Shift) when not typing
+    // Toggle with ? key (Slash + Shift) or K key when not typing
     // We check both Shift keys and use ButtonInput directly since egui might not consume it if not focused
-    if !ctx.wants_keyboard_input()
-        && (keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight))
-        && keyboard.just_pressed(KeyCode::Slash)
-    {
-        cheatsheet.0 = !cheatsheet.0;
+    if !ctx.wants_keyboard_input() {
+        let question_mark = (keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight))
+            && keyboard.just_pressed(KeyCode::Slash);
+        
+        if question_mark || keyboard.just_pressed(KeyCode::KeyK) {
+            cheatsheet.0 = !cheatsheet.0;
+        }
     }
 
     if !cheatsheet.0 {
@@ -1943,7 +1945,7 @@ fn cheatsheet_system(
                         // Toggles
                         ("Toggle gizmos", "G"),
                         ("Toggle labels", "L"),
-                        ("Keyboard shortcuts", "?"),
+                        ("Keyboard shortcuts", "K / ?"),
                         // Tools
                         ("Cancel ruler", "Esc"),
                     ];
