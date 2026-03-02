@@ -166,7 +166,8 @@ The AI chat pipeline (`ai_chat.rs`) logs the full request (system prompt, messag
 
 ## UI Conventions
 
-- **Hand cursor on hover**: All clickable/interactive widgets display a pointing-hand cursor. This is set globally via `style.interaction.interact_cursor` in `setup_egui_theme` — do **not** set cursors per-widget.
+- **Hand cursor on hover**: All clickable/interactive widgets display a pointing-hand cursor. This is set globally via `style.interaction.interact_cursor` in `setup_egui_theme`. For custom widgets using `sense(Sense::click())`, explicitly add `.on_hover_cursor(egui::CursorIcon::PointingHand)`.
+- **Dialog behavior**: All floating windows (Settings, Cheatsheet, etc.) must close when the **Escape** key is pressed.
 - **AI Settings**: Opened via a ⚙ gear button in the "AI Assistant" header row; rendered as a floating `egui::Window`, not inline.
 - **Compile button**: Right-aligned in the "Code" heading row.
 
