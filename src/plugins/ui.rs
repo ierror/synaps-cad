@@ -188,7 +188,7 @@ fn setup_egui_theme(mut contexts: EguiContexts) {
 }
 
 const SPLASH_IMAGE_BYTES: &[u8] = include_bytes!("../../assets/splash@2x.png");
-const SPLASH_DURATION: f32 = 1.5;
+const SPLASH_DURATION: f32 = 0.75;
 const SPLASH_FADE_DURATION: f32 = 0.3;
 
 fn set_window_icon(
@@ -685,7 +685,8 @@ fn ui_layout_system(
                                             .color(egui::Color32::from_rgb(180, 180, 200)),
                                     )
                                     .sense(egui::Sense::click()),
-                                ).on_hover_text("Click to copy");
+                                ).on_hover_text("Click to copy")
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
                                 if ui.small_button("x").clicked() {
                                     to_remove = Some(i);
                                 }
@@ -983,6 +984,7 @@ fn ui_layout_system(
                                                 )
                                                 .sense(egui::Sense::click()),
                                             ).on_hover_text("Click to copy")
+                                            .on_hover_cursor(egui::CursorIcon::PointingHand)
                                         });
                                     if frame_resp.inner.hovered() {
                                         show_image_preview(ui, img, &mut preview_state);
@@ -1142,6 +1144,11 @@ fn ui_layout_system(
     // Auto-open settings dialog when model needs reconfiguration
     if available_models.needs_configuration {
         settings_open.0 = true;
+    }
+
+    // Close on Esc
+    if settings_open.0 && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        settings_open.0 = false;
     }
 
     // --- AI Settings dialog window ---
@@ -1890,8 +1897,9 @@ fn cheatsheet_system(
     };
 
     // Toggle with ? key (Slash + Shift) when not typing
+    // We check both Shift keys and use ButtonInput directly since egui might not consume it if not focused
     if !ctx.wants_keyboard_input()
-        && keyboard.pressed(KeyCode::ShiftLeft)
+        && (keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight))
         && keyboard.just_pressed(KeyCode::Slash)
     {
         cheatsheet.0 = !cheatsheet.0;
@@ -1920,8 +1928,8 @@ fn cheatsheet_system(
                 .show(ui, |ui| {
                     let shortcuts: &[(&str, &str)] = &[
                         // Navigation
-                        ("Orbit", "MMB drag / RMB drag"),
-                        ("Pan", "Shift + MMB drag"),
+                        ("Orbit", "🖱 Middle / 🖱 Right"),
+                        ("Pan", "Shift + 🖱 Middle"),
                         ("Zoom", "Scroll / + / −"),
                         ("Move focus", "W A S D / Arrow keys"),
                         // Views
