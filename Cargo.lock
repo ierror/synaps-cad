@@ -6765,6 +6765,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "ttf-parser 0.25.1",
  "winresource",
 ]
 
