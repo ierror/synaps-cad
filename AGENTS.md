@@ -148,6 +148,8 @@ cargo clippy       # lint
 - **No-panic tests**: for features using dependencies with known issues (spade, csgrs), verify they don't crash
 - **Unit tests**: for specific compiler features (cones, polyhedra, boolean ops)
 
+**Visual verification is mandatory.** When implementing or fixing rendering features (text, extrusion, boolean ops, transforms, etc.), you **must** visually compare SynapsCAD's output with OpenSCAD's output for the same code. Do not rely solely on bounding-box or triangle-count tests — they can pass while the rendering is visibly wrong. Render the code in both OpenSCAD and SynapsCAD, compare the results, and only consider the feature correct when they match visually.
+
 ### Debug Logging
 
 Use `cfg!(debug_assertions)` to guard debug output. This ensures logs appear only in `cargo run` (debug mode) and are stripped entirely from release builds (`cargo build --release`).
