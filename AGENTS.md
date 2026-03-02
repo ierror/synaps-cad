@@ -182,6 +182,10 @@ When generating models, always use `color()` to give each part a realistic, sema
 
 Example: `color("green") cylinder(h = 20, r = 3);` for a plant stem.
 
+## Git Workflow
+
+**Do not commit automatically.** Never run `git commit` unless the user explicitly asks to commit. Stage and verify changes, but wait for the user to decide when to commit.
+
 ## Maintaining This Document
 
 **Keep `AGENTS.md` up to date.** When making architecture-relevant changes — new plugins, new resources/components, changed data flow, new UI patterns, or new conventions — update this file so that AI agents always have accurate context about the codebase.
