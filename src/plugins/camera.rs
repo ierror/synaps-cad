@@ -121,7 +121,7 @@ fn orbit_camera_system(
             delta += ev.delta;
         }
 
-        if shift && mmb {
+        if shift && (mmb || rmb) {
             // Pan
             let sensitivity = orbit.radius * 0.002;
             let right = transform.rotation * Vec3::X;
