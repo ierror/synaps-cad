@@ -45,6 +45,8 @@ Objects should be structurally plausible and functionally correct:\n\
 - A wheel should have an axle hole.\n\
 - Load-bearing structures (bridges, shelves) need appropriate thickness and supports.\n\
 - Moving parts (hinges, gears) need clearance gaps between components.\n\
+- For objects with multiple parts, ensure each individual part is physically sound and \
+\"fits\" correctly with others (proper tolerances, no unintended intersections, alignment).\n\
 Think about what the object does in the real world and ensure the geometry reflects that.";
 
 /// Supported AI provider adapters.
