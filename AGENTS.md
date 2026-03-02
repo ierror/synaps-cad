@@ -189,6 +189,8 @@ Example: `color("green") cylinder(h = 20, r = 3);` for a plant stem.
 
 **Do not commit automatically.** Never run `git commit` unless the user explicitly asks to commit. Stage and verify changes, but wait for the user to decide when to commit.
 
+**Do not update `CHANGELOG.md` automatically.** Only update the changelog when explicitly requested by the user.
+
 ## Maintaining This Document
 
 **Keep `AGENTS.md` up to date.** When making architecture-relevant changes — new plugins, new resources/components, changed data flow, new UI patterns, or new conventions — update this file so that AI agents always have accurate context about the codebase.
