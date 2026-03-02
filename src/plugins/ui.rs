@@ -532,7 +532,7 @@ fn ui_layout_system(
     mut occupied: ResMut<OccupiedScreenSpace>,
     mut ai_config: ResMut<AiConfig>,
     mut available_models: ResMut<AvailableModels>,
-    compilation_state: Res<CompilationState>,
+    mut compilation_state: ResMut<CompilationState>,
     mut file_picker: ResMut<FilePickerState>,
     runtime: Res<TokioRuntime>,
     mut preview_state: ResMut<ImagePreviewState>,
@@ -971,29 +971,31 @@ fn ui_layout_system(
                                 }
                             }
                             if !msg.images.is_empty() {
-                                for img in &msg.images {
-                                    let frame_resp = egui::Frame::new()
-                                        .fill(egui::Color32::from_rgb(40, 40, 58))
-                                        .corner_radius(egui::CornerRadius::same(3))
-                                        .inner_margin(egui::Margin::symmetric(4, 2))
-                                        .show(ui, |ui| {
-                                            ui.add(
-                                                egui::Label::new(
-                                                    egui::RichText::new("📷")
-                                                        .small()
-                                                        .color(egui::Color32::from_rgb(160, 160, 180)),
-                                                )
-                                                .sense(egui::Sense::click()),
-                                            ).on_hover_text("Click to copy")
-                                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                        });
-                                    if frame_resp.inner.hovered() {
-                                        show_image_preview(ui, img, &mut preview_state);
+                                ui.horizontal_wrapped(|ui| {
+                                    for img in &msg.images {
+                                        let frame_resp = egui::Frame::new()
+                                            .fill(egui::Color32::from_rgb(40, 40, 58))
+                                            .corner_radius(egui::CornerRadius::same(3))
+                                            .inner_margin(egui::Margin::symmetric(4, 2))
+                                            .show(ui, |ui| {
+                                                ui.add(
+                                                    egui::Label::new(
+                                                        egui::RichText::new("📷")
+                                                            .small()
+                                                            .color(egui::Color32::from_rgb(160, 160, 180)),
+                                                    )
+                                                    .sense(egui::Sense::click()),
+                                                ).on_hover_text("Click to copy")
+                                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                            });
+                                        if frame_resp.inner.hovered() {
+                                            show_image_preview(ui, img, &mut preview_state);
+                                        }
+                                        if frame_resp.inner.clicked() {
+                                            copy_chat_image_to_clipboard(img);
+                                        }
                                     }
-                                    if frame_resp.inner.clicked() {
-                                        copy_chat_image_to_clipboard(img);
-                                    }
-                                }
+                                });
                             }
                         });
                     ui.add_space(2.0);
@@ -1089,7 +1091,7 @@ fn ui_layout_system(
         // --- View selector (shown when code defines multiple views) ---
         let (active_view, all_views) = detect_views(&scad_code.text);
         if all_views.len() > 1 {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new("View:").small().color(egui::Color32::from_rgb(160, 160, 180)));
                 let current = active_view.unwrap_or_default();
                 for view_name in &all_views {
