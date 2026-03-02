@@ -956,12 +956,12 @@ fn ui_layout_system(
                 for (rev_i, msg) in visible_messages.iter().rev().enumerate() {
                     let msg_idx = chat_state.session_start + msg_count - 1 - rev_i;
                     let is_user = msg.role == "user";
-                    let (prefix, color) = if is_user {
-                        ("You", egui::Color32::from_rgb(100, 160, 255))
+                    let (prefix, color, header_bg) = if is_user {
+                        ("You", egui::Color32::from_rgb(100, 160, 255), egui::Color32::from_rgb(40, 50, 80))
                     } else if msg.is_error {
-                        ("⚠", egui::Color32::from_rgb(255, 100, 100))
+                        ("⚠", egui::Color32::from_rgb(255, 100, 100), egui::Color32::from_rgb(80, 40, 40))
                     } else {
-                        ("AI", egui::Color32::from_rgb(130, 220, 130))
+                        ("AI", egui::Color32::from_rgb(130, 220, 130), egui::Color32::from_rgb(40, 60, 40))
                     };
 
                     // Build header text: for user messages show truncated preview
@@ -992,23 +992,34 @@ fn ui_layout_system(
                     }
                     state
                         .show_header(ui, |ui| {
-                            ui.label(egui::RichText::new(&header_text).strong().color(color));
+                            egui::Frame::new()
+                                .fill(header_bg)
+                                .corner_radius(egui::CornerRadius::same(3))
+                                .inner_margin(egui::Margin::symmetric(4, 2))
+                                .show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    ui.label(egui::RichText::new(&header_text).strong().color(color));
+                                });
                         })
                         .body(|ui| {
-                            // Show thinking/reasoning if available (collapsible)
+                            // Show thinking/reasoning if available (collapsible, defaults to OPEN)
                             if let Some(ref thinking) = msg.thinking {
-                                ui.collapsing(
-                                    egui::RichText::new("💭 Thinking…")
-                                        .italics()
-                                        .color(egui::Color32::from_rgb(180, 180, 180)),
-                                    |ui| {
+                                let think_id = id.with("thinking");
+                                egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), think_id, true)
+                                    .show_header(ui, |ui| {
+                                        ui.label(
+                                            egui::RichText::new("💭 Thinking…")
+                                                .italics()
+                                                .color(egui::Color32::from_rgb(180, 180, 180)),
+                                        );
+                                    })
+                                    .body(|ui| {
                                         ui.label(
                                             egui::RichText::new(thinking)
                                                 .italics()
                                                 .color(egui::Color32::from_rgb(150, 150, 150)),
                                         );
-                                    },
-                                );
+                                    });
                             }
                             // For user messages, only show full content if it was truncated in the header
                             if !is_user || msg.content.chars().count() > 80 {
