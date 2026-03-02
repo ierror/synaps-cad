@@ -881,11 +881,11 @@ fn bmesh_to_mesh_data(bmesh: &BMesh<()>) -> Result<MeshData, String> {
     bmesh.visit_triangles(|[v0, v1, v2]| {
         let idx = positions.len() as u32;
         // OpenSCAD Z-up → Bevy Y-up: swap Y and Z
-        for v in &[v0, v1, v2] {
+        for v in &[v0, v2, v1] {
             positions.push([
                 v.position.x as f32,
                 v.position.z as f32,
-                v.position.y as f32,
+                -v.position.y as f32,
             ]);
         }
         // Compute face normal in Bevy space from the swapped positions
@@ -946,8 +946,8 @@ fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
             let p2 = &poly.vertices[j + 1].position;
             let idx = positions.len() as u32;
             // OpenSCAD Z-up → Bevy Y-up: swap Y and Z
-            for p in [p0, p1, p2] {
-                positions.push([p.x as f32, p.z as f32, p.y as f32]);
+            for p in [p0, p2, p1] {
+                positions.push([p.x as f32, p.z as f32, -p.y as f32]);
             }
             let a = positions[idx as usize];
             let b = positions[idx as usize + 1];
@@ -3620,12 +3620,12 @@ translate([0,10,0])
                 // RTL (part 3) must have positive x (text extends rightward)
                 let rtl_x_min = parts[3].positions.iter().map(|p| p[0]).fold(f32::MAX, f32::min);
                 assert!(rtl_x_min >= -0.5, "RTL text should be in positive x region, got x_min={rtl_x_min}");
-                // BTT (part 1) must be in negative y (below baseline)
-                let btt_y_max = parts[1].positions.iter().map(|p| p[2]).fold(f32::MIN, f32::max);
-                assert!(btt_y_max < 0.5, "BTT text should be below y=0, got y_max={btt_y_max}");
-                // TTB (part 2) must be in negative y (below baseline)
-                let ttb_y_max = parts[2].positions.iter().map(|p| p[2]).fold(f32::MIN, f32::max);
-                assert!(ttb_y_max < 0.5, "TTB text should be below y=0, got y_max={ttb_y_max}");
+                // BTT (part 1) — after Y-mirror, text positions are in positive y
+                let btt_y_min = parts[1].positions.iter().map(|p| p[2]).fold(f32::MAX, f32::min);
+                assert!(btt_y_min > -0.5, "BTT text should be in positive y after mirror, got y_min={btt_y_min}");
+                // TTB (part 2) — after Y-mirror, text positions are in positive y
+                let ttb_y_min = parts[2].positions.iter().map(|p| p[2]).fold(f32::MAX, f32::min);
+                assert!(ttb_y_min > -0.5, "TTB text should be in positive y after mirror, got y_min={ttb_y_min}");
             }
             CompilationResult::Error(e) => panic!("Text direction should not fail: {e}"),
         }
@@ -4295,9 +4295,9 @@ RefillClip();
         for part in &parts {
             our_triangles += part.indices.len() / 3;
             for pos in &part.positions {
-                // pos is [x, y, z] in Y-up (swapped Y↔Z from Z-up).
-                // Convert back: Z-up X = pos[0], Z-up Y = pos[2], Z-up Z = pos[1]
-                let zup = [f64::from(pos[0]), f64::from(pos[2]), f64::from(pos[1])];
+                // pos is [x, y, z] in Y-up (right-handed mapping: X=X, Y=Z, Z=-Y).
+                // Convert back to OpenSCAD Z-up: X = pos[0], Y = -pos[2], Z = pos[1]
+                let zup = [f64::from(pos[0]), -f64::from(pos[2]), f64::from(pos[1])];
                 for i in 0..3 {
                     if zup[i] < our_min[i] {
                         our_min[i] = zup[i];
