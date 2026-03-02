@@ -633,6 +633,7 @@ fn ui_layout_system(
                     chat_state.pending_images.clear();
                     chat_state.session_start = 0;
                 }
+
                 // Verify rounds selector
                 let selected_label = if ai_config.max_verification_rounds == u32::MAX {
                     "∞".to_string()
@@ -641,7 +642,7 @@ fn ui_layout_system(
                 };
                 egui::ComboBox::from_id_salt("verify_rounds_main")
                     .selected_text(selected_label)
-                    .width(36.0)
+                    .width(32.0)
                     .show_ui(ui, |ui| {
                         for &n in VERIFICATION_ROUND_CHOICES {
                             let label = if n == u32::MAX {
@@ -659,6 +660,50 @@ fn ui_layout_system(
                     .response
                     .on_hover_text("Verification rounds: after generating code, the AI reviews the rendered result and self-corrects if needed. Set how many automatic correction rounds are allowed (∞ = unlimited).");
                 ui.label(egui::RichText::new("Verify").small());
+
+                // Extended Thinking checkbox
+                ui.checkbox(&mut ai_config.extended_thinking, "")
+                    .on_hover_text("Enable 'Extended Thinking' (reasoning effort) for models that support it.");
+                ui.label(egui::RichText::new("Think").small());
+
+                // Provider selection
+                let mut current_adapter = ai_config.adapter_name.clone();
+                if egui::ComboBox::from_id_salt("provider_select_main")
+                    .selected_text(&current_adapter)
+                    .width(80.0)
+                    .show_ui(ui, |ui| {
+                        let mut changed = false;
+                        for &adapter in super::ai_chat::ADAPTER_NAMES {
+                            let needs_key = env_var_for_adapter(adapter).is_some();
+                            let env_key_set = env_var_for_adapter(adapter)
+                                .and_then(|name| std::env::var(name).ok())
+                                .is_some_and(|v| !v.is_empty());
+                            let has_entered_key = ai_config.api_keys.get(adapter).is_some_and(|k| !k.is_empty());
+                            let is_configured = !needs_key || env_key_set || has_entered_key;
+
+                            ui.add_enabled_ui(is_configured, |ui| {
+                                if ui.selectable_value(&mut current_adapter, adapter.to_string(), adapter).clicked() {
+                                    changed = true;
+                                }
+                            });
+                        }
+                        changed
+                    }).inner.unwrap_or(false) {
+                    if current_adapter != ai_config.adapter_name {
+                        // Save current model to memory
+                        if !ai_config.model_name.is_empty() {
+                            let old_adapter = ai_config.adapter_name.clone();
+                            let old_model = ai_config.model_name.clone();
+                            ai_config.model_per_provider.insert(old_adapter, old_model);
+                        }
+                        ai_config.adapter_name = current_adapter;
+                        // Restore model from memory or clear
+                        ai_config.model_name = ai_config.model_per_provider.get(&ai_config.adapter_name).cloned().unwrap_or_default();
+                        // Clear model list to trigger re-fetch
+                        available_models.models.clear();
+                        available_models.error = None;
+                    }
+                }
             });
         });
         ui.separator();
@@ -733,10 +778,10 @@ fn ui_layout_system(
                             chat_state.verification = super::ai_chat::VerificationState::Idle;
                         }
                     } else {
-                        send_clicked = ui.button("⬆").on_hover_text("Send").clicked();
+                        send_clicked = ui.button("⬆").on_hover_text("Send (Shift+Enter)").clicked();
                         enter_pressed = resp.has_focus()
                             && ui.input(|i| {
-                                i.key_pressed(egui::Key::Enter) && !i.modifiers.shift
+                                i.key_pressed(egui::Key::Enter) && i.modifiers.shift
                             });
                     }
                     attach_clicked = ui.button("📎").on_hover_text("Attach image").clicked();
@@ -799,7 +844,7 @@ fn ui_layout_system(
                 chat_state.pending_images.push(img);
             }
 
-            // Strip trailing newline inserted by Enter key (we use Enter to send)
+            // Strip trailing newline inserted by the send key (Shift+Enter)
             if enter_pressed {
                 chat_state.input_buffer = chat_state.input_buffer.trim_end_matches('\n').to_string();
             }
@@ -1180,11 +1225,20 @@ fn ui_layout_system(
                     .selected_text(&ai_config.adapter_name)
                     .show_ui(ui, |ui| {
                         for &adapter in ADAPTER_NAMES {
-                            ui.selectable_value(
-                                &mut ai_config.adapter_name,
-                                adapter.to_string(),
-                                adapter,
-                            );
+                            let needs_key = env_var_for_adapter(adapter).is_some();
+                            let env_key_set = env_var_for_adapter(adapter)
+                                .and_then(|name| std::env::var(name).ok())
+                                .is_some_and(|v| !v.is_empty());
+                            let has_entered_key = ai_config.api_keys.get(adapter).is_some_and(|k| !k.is_empty());
+                            let is_configured = !needs_key || env_key_set || has_entered_key;
+
+                            ui.add_enabled_ui(is_configured, |ui| {
+                                ui.selectable_value(
+                                    &mut ai_config.adapter_name,
+                                    adapter.to_string(),
+                                    adapter,
+                                );
+                            });
                         }
                     });
                 // Save current model for old provider, restore for new provider

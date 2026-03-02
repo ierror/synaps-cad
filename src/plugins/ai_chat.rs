@@ -45,6 +45,8 @@ Objects should be structurally plausible and functionally correct:\n\
 - A wheel should have an axle hole.\n\
 - Load-bearing structures (bridges, shelves) need appropriate thickness and supports.\n\
 - Moving parts (hinges, gears) need clearance gaps between components.\n\
+- Materials that are connected (e.g., a wooden tabletop on metal legs) do not \"flow\" together; \
+ensure they have distinct boundaries and do not simply merge into a single shape.\n\
 - For objects with multiple parts, ensure each individual part is physically sound and \
 \"fits\" correctly with others (proper tolerances, no unintended intersections, alignment).\n\
 Think about what the object does in the real world and ensure the geometry reflects that.";
@@ -94,6 +96,7 @@ pub struct AiConfig {
     pub temperature: f64,
     /// Maximum automatic verification rounds (u32::MAX = unlimited).
     pub max_verification_rounds: u32,
+    pub extended_thinking: bool,
 }
 
 impl AiConfig {
@@ -123,6 +126,7 @@ impl Default for AiConfig {
             system_prompt: DEFAULT_SYSTEM_PROMPT.into(),
             temperature: 0.7,
             max_verification_rounds: 2,
+            extended_thinking: false,
         }
     }
 }
@@ -390,6 +394,7 @@ fn ai_send_system(
     };
     let system_prompt = ai_config.system_prompt.clone();
     let temperature = ai_config.temperature;
+    let extended_thinking = ai_config.extended_thinking;
     let views = model_views.views.clone();
     let other_views = model_views.other_views.clone();
 
@@ -398,7 +403,10 @@ fn ai_send_system(
 
     if cfg!(debug_assertions) {
         eprintln!("[DEBUG] === AI Chat Request ===");
+        eprintln!("[DEBUG] Provider: {}", ai_config.adapter_name);
         eprintln!("[DEBUG] Model: {model_name}");
+        eprintln!("[DEBUG] Temperature: {temperature}");
+        eprintln!("[DEBUG] Extended thinking: {extended_thinking}");
         eprintln!("[DEBUG] System prompt: {} chars", system_prompt.len());
         eprintln!("[DEBUG] Messages: {}", messages.len());
         eprintln!("[DEBUG] Views: {}, User images: {}", views.len(), user_images.len());
@@ -413,6 +421,7 @@ fn ai_send_system(
             api_key.as_deref(),
             &system_prompt,
             temperature,
+            extended_thinking,
             &views,
             &other_views,
             part_context,
@@ -438,6 +447,7 @@ async fn run_ai_stream(
     api_key: Option<&str>,
     base_system_prompt: &str,
     temperature: f64,
+    extended_thinking: bool,
     views: &[(String, String)],
     other_views: &[(String, Vec<(String, String)>)],
     part_context: String,
@@ -447,7 +457,7 @@ async fn run_ai_stream(
     use genai::Client;
     use genai::chat::{
         ChatMessage as GenaiMessage, ChatOptions, ChatRequest, ChatStreamEvent, ContentPart,
-        MessageContent,
+        MessageContent, ReasoningEffort,
     };
     use genai::resolver::AuthData;
 
@@ -591,10 +601,15 @@ async fn run_ai_stream(
         ));
     }
 
-    let chat_options = ChatOptions::default()
+    let mut chat_options = ChatOptions::default()
         .with_temperature(temperature)
         .with_capture_content(true)
         .with_capture_reasoning_content(true);
+
+    if extended_thinking {
+        chat_options = chat_options.with_reasoning_effort(ReasoningEffort::High);
+    }
+
     let stream_response = client
         .exec_chat_stream(model_name, chat_req, Some(&chat_options))
         .await?;
