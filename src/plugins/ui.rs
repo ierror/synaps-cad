@@ -684,8 +684,8 @@ fn ui_layout_system(
                                             .small()
                                             .color(egui::Color32::from_rgb(180, 180, 200)),
                                     )
-                                    .sense(egui::Sense::hover()),
-                                );
+                                    .sense(egui::Sense::click()),
+                                ).on_hover_text("Click to copy");
                                 if ui.small_button("x").clicked() {
                                     to_remove = Some(i);
                                 }
@@ -694,6 +694,9 @@ fn ui_layout_system(
                         });
                     if frame_resp.inner.inner.hovered() {
                         show_image_preview(ui, img, &mut preview_state);
+                    }
+                    if frame_resp.inner.inner.clicked() {
+                        copy_chat_image_to_clipboard(img);
                     }
                 }
                 if let Some(idx) = to_remove {
@@ -785,6 +788,13 @@ fn ui_layout_system(
                             chat_state.pending_images.clear();
                         }
                     }
+            }
+
+            // Clipboard image paste (Cmd/Ctrl+V anywhere in the side panel)
+            if ui.input(|i| i.key_pressed(egui::Key::V) && i.modifiers.command)
+                && let Some(img) = clipboard_image_as_chat_image()
+            {
+                chat_state.pending_images.push(img);
             }
 
             // Strip trailing newline inserted by Enter key (we use Enter to send)
@@ -964,15 +974,18 @@ fn ui_layout_system(
                                         .show(ui, |ui| {
                                             ui.add(
                                                 egui::Label::new(
-                                                    egui::RichText::new(format!("📷 {}", img.filename))
+                                                    egui::RichText::new("📷")
                                                         .small()
                                                         .color(egui::Color32::from_rgb(160, 160, 180)),
                                                 )
-                                                .sense(egui::Sense::hover()),
-                                            )
+                                                .sense(egui::Sense::click()),
+                                            ).on_hover_text("Click to copy")
                                         });
                                     if frame_resp.inner.hovered() {
                                         show_image_preview(ui, img, &mut preview_state);
+                                    }
+                                    if frame_resp.inner.clicked() {
+                                        copy_chat_image_to_clipboard(img);
                                     }
                                 }
                             }
@@ -1746,6 +1759,122 @@ fn load_image_as_chat_image(path: &std::path::Path) -> Option<super::ai_chat::Ch
         mime_type: mime_type.to_string(),
         base64_data,
     })
+}
+
+/// Try to get a file path from the system clipboard (e.g., file copied in Finder).
+fn clipboard_file_path() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("osascript")
+            .args([
+                "-e",
+                "try\nPOSIX path of (the clipboard as \u{00AB}class furl\u{00BB})\non error\n\"\"\nend try",
+            ])
+            .output()
+            .ok()?;
+        if output.status.success() {
+            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path_str.is_empty() {
+                let path = std::path::PathBuf::from(&path_str);
+                if path.exists() && path.is_file() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Try to read an image from the system clipboard and return it as a [`ChatImage`].
+fn clipboard_image_as_chat_image() -> Option<super::ai_chat::ChatImage> {
+    // 1. Try to load from a file path on the clipboard (e.g., Cmd+C on file in Finder)
+    if let Some(path) = clipboard_file_path() {
+        let is_image = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str()));
+        if is_image {
+            return load_image_as_chat_image(&path);
+        }
+    }
+
+    // 2. Fall back to raw image data on clipboard (e.g., screenshot, image copied from web)
+    use base64::Engine;
+
+    let mut clipboard = arboard::Clipboard::new().ok()?;
+    let img_data = clipboard.get_image().ok()?;
+
+    #[allow(clippy::cast_possible_truncation)]
+    let rgba = image::RgbaImage::from_raw(
+        img_data.width as u32,
+        img_data.height as u32,
+        img_data.bytes.into_owned(),
+    )?;
+
+    let dyn_img = image::DynamicImage::from(rgba);
+
+    let max_bytes = crate::app_config::MAX_IMAGE_BYTES;
+    let mut buf = std::io::Cursor::new(Vec::new());
+    dyn_img
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .ok()?;
+    let mut encoded = buf.into_inner();
+
+    #[allow(clippy::cast_precision_loss)]
+    if encoded.len() > max_bytes {
+        let mut scale = (max_bytes as f64 / encoded.len() as f64).sqrt();
+        loop {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let new_w = (f64::from(dyn_img.width()) * scale) as u32;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let new_h = (f64::from(dyn_img.height()) * scale) as u32;
+            let resized = dyn_img.resize(
+                new_w.max(1),
+                new_h.max(1),
+                image::imageops::FilterType::Lanczos3,
+            );
+            let mut cursor = std::io::Cursor::new(Vec::new());
+            resized
+                .write_to(&mut cursor, image::ImageFormat::Png)
+                .ok()?;
+            encoded = cursor.into_inner();
+            if encoded.len() <= max_bytes || scale < 0.1 {
+                break;
+            }
+            scale *= 0.8;
+        }
+    }
+
+    let now = chrono::Local::now();
+    let filename = now.format("Pasted %Y-%m-%d %H-%M-%S.png").to_string();
+
+    let base64_data = base64::engine::general_purpose::STANDARD.encode(&encoded);
+    Some(super::ai_chat::ChatImage {
+        filename,
+        mime_type: "image/png".to_string(),
+        base64_data,
+    })
+}
+
+/// Copy a [`ChatImage`] to the system clipboard.
+fn copy_chat_image_to_clipboard(img: &super::ai_chat::ChatImage) {
+    use base64::Engine;
+
+    let Ok(raw) = base64::engine::general_purpose::STANDARD.decode(&img.base64_data) else {
+        return;
+    };
+    let Ok(dyn_img) = image::load_from_memory(&raw) else {
+        return;
+    };
+    let rgba = dyn_img.to_rgba8();
+    let img_data = arboard::ImageData {
+        width: rgba.width() as usize,
+        height: rgba.height() as usize,
+        bytes: rgba.into_raw().into(),
+    };
+    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+        let _ = clipboard.set_image(img_data);
+    }
 }
 
 fn cheatsheet_system(

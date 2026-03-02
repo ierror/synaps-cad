@@ -6747,10 +6747,12 @@ dependencies = [
 name = "synaps-cad"
 version = "0.5.2"
 dependencies = [
+ "arboard",
  "base64 0.22.1",
  "bevy",
  "bevy_egui",
  "boolmesh",
+ "chrono",
  "csgrs",
  "dirs",
  "genai",
