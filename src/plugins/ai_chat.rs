@@ -378,6 +378,7 @@ fn ai_send_system(
         .unwrap_or_default();
 
     let current_code = scad_code.text.clone();
+    let (active_view_name, _) = super::code_editor::detect_views(&current_code);
     let model_name = ai_config.model_name.clone();
     let current_key = ai_config.api_key().to_string();
     let api_key = if current_key.is_empty() {
@@ -405,6 +406,7 @@ fn ai_send_system(
         let result = run_ai_stream(
             messages,
             current_code,
+            active_view_name,
             &model_name,
             api_key.as_deref(),
             &system_prompt,
@@ -429,6 +431,7 @@ fn ai_send_system(
 async fn run_ai_stream(
     messages: Vec<ChatMessage>,
     current_code: String,
+    active_view_name: Option<String>,
     model_name: &str,
     api_key: Option<&str>,
     base_system_prompt: &str,
@@ -488,12 +491,23 @@ async fn run_ai_stream(
 
     // Attach orthographic views to the last user message if available
     if !views.is_empty() {
-        let mut parts = vec![ContentPart::from_text(
-            "Current 3D model rendered from five orthographic/isometric views:",
-        )];
+        let view_intro = if let Some(ref name) = active_view_name {
+            format!("The user is CURRENTLY SEEING the following $view \"{name}\" in their viewport. Here are five orthographic/isometric views of it:")
+        } else {
+            "Current 3D model (active view) rendered from five orthographic/isometric views:".to_string()
+        };
+        let mut parts = vec![ContentPart::from_text(view_intro)];
         for (label, base64_png) in views {
             if !base64_png.is_empty() {
-                parts.push(ContentPart::from_text(format!("{label} view:")));
+                let descriptive_label = match label.as_str() {
+                    "Front" => "Front view (Looking from +Y towards origin)",
+                    "Right" => "Right view (Looking from +X towards origin)",
+                    "Top" => "Top view (Looking from +Z towards origin)",
+                    "Bottom" => "Bottom view (Looking from -Z towards origin)",
+                    "Iso" => "Isometric view (3/4 perspective)",
+                    _ => label,
+                };
+                parts.push(ContentPart::from_text(format!("{descriptive_label}:")));
                 parts.push(ContentPart::from_binary_base64(
                     "image/png",
                     base64_png.as_str(),
