@@ -960,11 +960,14 @@ fn ui_layout_system(
                                     },
                                 );
                             }
-                            let scroll_resp = render_chat_content(ui, &msg.content, msg.is_error);
+                            // For user messages, only show full content if it was truncated in the header
+                            if !is_user || msg.content.chars().count() > 80 {
+                                let scroll_resp = render_chat_content(ui, &msg.content, msg.is_error);
                                 // Auto-scroll to keep the latest streaming text visible
                                 if chat_state.is_streaming && rev_i == 0 {
                                     scroll_resp.scroll_to_me(Some(egui::Align::BOTTOM));
                                 }
+                            }
                             if !msg.images.is_empty() {
                                 for img in &msg.images {
                                     let frame_resp = egui::Frame::new()
