@@ -117,6 +117,7 @@ impl Plugin for UiPlugin {
                     viewport_toolbar_system,
                     cheatsheet_system,
                     draw_part_labels,
+                    draw_axis_indicator,
                     file_drop_system,
                 ),
             );
@@ -2040,9 +2041,86 @@ fn file_drop_system(
                 .extension()
                 .and_then(|e| e.to_str())
                 .is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str()));
-            if is_image && let Some(img) = load_image_as_chat_image(path_buf) {
-                chat_state.pending_images.push(img);
+            if is_image {
+                 if let Some(img) = load_image_as_chat_image(path_buf) {
+                     chat_state.pending_images.push(img);
+                 }
             }
         }
     }
+}
+
+fn draw_axis_indicator(
+    mut contexts: EguiContexts,
+    camera_query: Query<&GlobalTransform, With<MainCamera>>,
+    occupied: Res<OccupiedScreenSpace>,
+    splash: Res<SplashScreen>,
+) {
+    if splash.timer > -crate::plugins::ui::SPLASH_FADE_DURATION {
+        return;
+    }
+    let Some(ctx) = contexts.try_ctx_mut() else {
+        return;
+    };
+    let Ok(cam_tf) = camera_query.get_single() else {
+        return;
+    };
+
+    let screen_rect = ctx.screen_rect();
+    let viewport_left = occupied.left;
+    let bottom_left = egui::pos2(viewport_left + 40.0, screen_rect.max.y - 40.0);
+
+    // Axis length in pixels
+    let axis_len = 25.0;
+
+    // Get camera rotation (inverse to get world-to-view)
+    let cam_rot = cam_tf.compute_transform().rotation;
+    let view_rot = cam_rot.inverse();
+
+    let axes = [
+        (Vec3::X, egui::Color32::from_rgb(220, 60, 60), "X"),
+        (Vec3::Y, egui::Color32::from_rgb(60, 100, 240), "Z"), // Bevy Y = OpenSCAD Z (Up) -> Blue
+        (Vec3::Z, egui::Color32::from_rgb(60, 220, 60), "Y"),  // Bevy Z = OpenSCAD Y (Depth) -> Green
+    ];
+
+    let mut sorted_axes: Vec<_> = axes.iter().map(|&(dir, color, label)| {
+        let view_dir = view_rot * dir;
+        (view_dir, color, label)
+    }).collect();
+
+    // Sort by Z (ascending = furthest first, since camera looks down -Z)
+    sorted_axes.sort_by(|(a, _, _), (b, _, _)| a.z.partial_cmp(&b.z).unwrap_or(std::cmp::Ordering::Equal));
+
+    egui::Area::new(egui::Id::new("axis_indicator"))
+        .fixed_pos(bottom_left)
+        .interactable(false)
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+             let painter = ui.painter();
+             // We can use (0,0) as center because the Area is positioned at bottom_left,
+             // BUT ui.painter() works in screen coordinates, so we must add the Area's position.
+             // Alternatively, use ui.min_rect().min which is the Area's position.
+             let center = ui.min_rect().min;
+
+             // Draw axes
+             for (view_dir, color, label) in sorted_axes {
+                 let end = center + egui::vec2(view_dir.x, -view_dir.y) * axis_len;
+
+                 // Draw line
+                 painter.line_segment([center, end], egui::Stroke::new(2.5, color));
+
+                 // Draw label
+                 let text_pos = end + egui::vec2(view_dir.x, -view_dir.y) * 8.0;
+                 painter.text(
+                     text_pos,
+                     egui::Align2::CENTER_CENTER,
+                     label,
+                     egui::FontId::proportional(12.0),
+                     color,
+                 );
+             }
+
+             // Draw center dot
+             painter.circle_filled(center, 2.0, egui::Color32::WHITE);
+        });
 }

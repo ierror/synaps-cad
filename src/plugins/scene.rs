@@ -92,23 +92,23 @@ fn setup_scene(
         Vec3::X * axis_length,
         Color::srgb(0.9, 0.2, 0.2),
     );
-    // Y axis (green) — Bevy Y-up = OpenSCAD Z-up
+    // Y axis (blue) — Bevy Y-up = OpenSCAD Z-up
     spawn_axis_line(
         &mut commands,
         &mut meshes,
         &mut materials,
         Vec3::ZERO,
         Vec3::Y * axis_length,
-        Color::srgb(0.2, 0.8, 0.2),
+        Color::srgb(0.2, 0.4, 0.9),
     );
-    // Z axis (blue) — Bevy Z = OpenSCAD Y
+    // Z axis (green) — Bevy Z = OpenSCAD Y
     spawn_axis_line(
         &mut commands,
         &mut meshes,
         &mut materials,
         Vec3::ZERO,
         Vec3::Z * axis_length,
-        Color::srgb(0.2, 0.4, 0.9),
+        Color::srgb(0.2, 0.8, 0.2),
     );
 
     // --- Grid Lines on XZ plane (ground) ---
