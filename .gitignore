@@ -1,6 +1,7 @@
-.DS_Store
+/.claude/
 /target/
 /var/
 
 /TODO.md
-*.app
+
+.DS_Store
