@@ -626,12 +626,11 @@ fn ui_layout_system(
                 if ui.button(gear_label).on_hover_text("AI Settings").clicked() {
                     settings_open.0 = !settings_open.0;
                 }
-                if ui.button("🗑").on_hover_text("Clear chat").clicked() {
-                    chat_state.messages.clear();
+                if ui.button("🗑").on_hover_text("Start new session (hides history from UI)").clicked() {
+                    chat_state.session_start = chat_state.messages.len();
                     chat_state.input_history.clear();
                     chat_state.history_index = None;
                     chat_state.pending_images.clear();
-                    chat_state.session_start = 0;
                 }
 
                 // Verify rounds selector
@@ -863,8 +862,10 @@ fn ui_layout_system(
                     images,
                     auto_generated: false,
                     is_error: false,
-                });                chat_state.input_buffer.clear();
+                });
+                chat_state.input_buffer.clear();
                 chat_state.is_streaming = true;
+                chat_state.stick_to_bottom = true;
             }
         });
 
@@ -875,6 +876,7 @@ fn ui_layout_system(
         egui::ScrollArea::vertical()
             .id_salt("chat_scroll")
             .max_height(chat_height)
+            .stick_to_bottom(chat_state.stick_to_bottom)
             .show(ui, |ui| {
                 // Status indicators at top (newest-first layout)
                 if chat_state.is_streaming {
@@ -949,9 +951,10 @@ fn ui_layout_system(
                 }
 
                 // Messages in reverse order (newest first)
-                let msg_count = chat_state.messages.len();
-                for (rev_i, msg) in chat_state.messages.iter().rev().enumerate() {
-                    let msg_idx = msg_count - 1 - rev_i;
+                let visible_messages = &chat_state.messages[chat_state.session_start..];
+                let msg_count = visible_messages.len();
+                for (rev_i, msg) in visible_messages.iter().rev().enumerate() {
+                    let msg_idx = chat_state.session_start + msg_count - 1 - rev_i;
                     let is_user = msg.role == "user";
                     let (prefix, color) = if is_user {
                         ("You", egui::Color32::from_rgb(100, 160, 255))
@@ -1047,6 +1050,11 @@ fn ui_layout_system(
                 }
             });
 
+        // If the user manually scrolls up, disable auto-scroll
+        if ui.input(|i| i.smooth_scroll_delta.y > 0.0) {
+            chat_state.stick_to_bottom = false;
+        }
+
         ui.add_space(4.0);
         ui.separator();
 
@@ -1071,13 +1079,12 @@ fn ui_layout_system(
                     scad_code.text.clear();
                     scad_code.dirty = true;
                     compilation_state.should_zoom = true; // Clear -> Fresh start -> Zoom
-                    // Reset AI chat for a fresh session
-                    chat_state.messages.clear();
+                    // Reset AI chat view for a fresh session (hides history from UI)
+                    chat_state.session_start = chat_state.messages.len();
                     chat_state.input_history.clear();
                     chat_state.history_index = None;
                     chat_state.pending_images.clear();
                     chat_state.verification = super::ai_chat::VerificationState::Idle;
-                    chat_state.session_start = 0;
                 }
                 // Export menu
                 let has_parts = !last_parts.parts.is_empty();
@@ -1184,7 +1191,6 @@ fn ui_layout_system(
                     scad_code.changed_while_focused = false;
                 }
             });
-
     });
 
     let new_left = response.response.rect.width();

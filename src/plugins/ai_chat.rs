@@ -193,7 +193,7 @@ Compare them carefully against the user's original request. \
 If the result does NOT match what was asked for, provide corrected code in a synapscad code block. \
 If it looks correct, briefly confirm what you see — do NOT repeat the code.";
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct ChatState {
     pub messages: Vec<ChatMessage>,
     pub input_buffer: String,
@@ -210,6 +210,25 @@ pub struct ChatState {
     /// Index into `messages` where the current session starts.
     /// Messages before this index are displayed but not sent to the AI.
     pub session_start: usize,
+    /// Whether the chat should auto-scroll to the bottom.
+    pub stick_to_bottom: bool,
+}
+
+impl Default for ChatState {
+    fn default() -> Self {
+        Self {
+            messages: Vec::new(),
+            input_buffer: String::new(),
+            input_history: Vec::new(),
+            history_index: None,
+            is_streaming: false,
+            stream_receiver: None,
+            pending_images: Vec::new(),
+            verification: VerificationState::Idle,
+            session_start: 0,
+            stick_to_bottom: true,
+        }
+    }
 }
 
 /// Tracks the auto-verification loop state.
