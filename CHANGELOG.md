@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-03-02
+
+### Added
+
+- **Better AI context for views** — the AI now knows exactly which `$view` you are currently seeing in the viewport. Standard orthographic views (Front, Right, Top, Bottom, Iso) include descriptive orientation labels (e.g., "Looking from +Y towards origin") for better spatial grounding.
+- **Physical Realism guidelines** — the AI's internal instructions now emphasize checking the physical "fit" and structural integrity of individual parts in multi-part assemblies, including proper tolerances and alignment.
+
+### Changed
+
+- **Improved chat auto-scrolling** — the chat now respects your manual scrolling. It will only "stick to the bottom" if you are already at the end of the conversation. If you scroll up to read previous messages, new incoming text won't force-scroll you back down.
+
+### Fixed
+
+- **UI Overflow** — the "View" selector and "Attached" image strip now use wrapped layouts. If you have many views or attachments, they will wrap to new lines instead of overflowing the right edge of the sidebar.
+- **Compilation error in UI system** — fixed a Rust compile error where `CompilationState` was incorrectly accessed as an immutable resource during a zoom-to-fit request.
+
 ## [0.5.2] - 2026-03-01
 
 ### Fixed
