@@ -13,7 +13,7 @@ pub struct ScadCode {
 
 const DEFAULT_CODE: &str = r#"// Welcome to SynapsCAD!
 // Switch $view to render different models
-$view = "snowman";
+$view = "all";
 
 // --- Snowman ---
 module view_snowman() {
