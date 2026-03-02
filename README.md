@@ -166,6 +166,23 @@ SynapsCAD uses **Blender-style** camera controls:
 | **Bottom view** | `6`                                                   |
 | **Isometric**   | `7`                                                   |
 
+## Development
+
+### Running
+
+```sh
+cargo run          # launch the app
+cargo clippy       # lint
+```
+
+### Tests
+
+```sh
+cargo test                         # run all tests
+cargo test test_text_              # run tests matching a pattern
+cargo test -- --nocapture          # show println/eprintln output
+```
+
 ## Contact
 
 [@boerni@chaos.social](https://chaos.social/@boerni)
