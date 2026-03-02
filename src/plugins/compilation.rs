@@ -86,10 +86,24 @@ pub enum CompilationResult {
     Error(String),
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct CompilationState {
     pub is_compiling: bool,
     pub result_receiver: Option<Mutex<mpsc::Receiver<CompilationResult>>>,
+    /// Whether the next successful compilation should trigger a zoom-to-fit.
+    /// This is set when the user explicitly requests a fresh render (Clear, Load)
+    /// but NOT on iterative edits/updates.
+    pub should_zoom: bool,
+}
+
+impl Default for CompilationState {
+    fn default() -> Self {
+        Self {
+            is_compiling: false,
+            result_receiver: None,
+            should_zoom: true, // Default to true so first load/compile zooms
+        }
+    }
 }
 
 /// Rendered orthographic views of the model (for AI context).
@@ -365,7 +379,8 @@ fn poll_compilation_system(
                     .id();
                 loaded_model.entity = Some(entity);
             }
-            orbit.zoom_to_fit = true;
+            orbit.zoom_to_fit = compilation_state.should_zoom;
+            compilation_state.should_zoom = false; // Reset flag after use
         }
         CompilationResult::Error(err) => {
             let user_msg = if err.contains("Internal error")

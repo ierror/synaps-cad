@@ -1017,10 +1017,13 @@ fn ui_layout_system(
                     .clicked()
                 {
                     scad_code.dirty = true;
+                    // Regular compile button does NOT force zoom-to-fit
+                    // unless it was the very first compile, which is handled by default OrbitCamera state
                 }
                 if ui.button("🗑").on_hover_text("Clear code").clicked() {
                     scad_code.text.clear();
                     scad_code.dirty = true;
+                    compilation_state.should_zoom = true; // Clear -> Fresh start -> Zoom
                     // Reset AI chat for a fresh session
                     chat_state.messages.clear();
                     chat_state.input_history.clear();
@@ -1557,30 +1560,37 @@ fn viewport_toolbar_system(
                         if view_btn(ui, "F", "Front view (1)") {
                             orbit.yaw = 0.0;
                             orbit.pitch = 0.0;
+                            orbit.zoom_to_fit = true;
                         }
                         if view_btn(ui, "Bk", "Back view (2)") {
                             orbit.yaw = pi;
                             orbit.pitch = 0.0;
+                            orbit.zoom_to_fit = true;
                         }
                         if view_btn(ui, "R", "Right view (3)") {
                             orbit.yaw = half_pi;
                             orbit.pitch = 0.0;
+                            orbit.zoom_to_fit = true;
                         }
                         if view_btn(ui, "L", "Left view (4)") {
                             orbit.yaw = -half_pi;
                             orbit.pitch = 0.0;
+                            orbit.zoom_to_fit = true;
                         }
                         if view_btn(ui, "T", "Top view (5)") {
                             orbit.yaw = 0.0;
                             orbit.pitch = half_pi - 0.01;
+                            orbit.zoom_to_fit = true;
                         }
                         if view_btn(ui, "Bo", "Bottom view (6)") {
                             orbit.yaw = 0.0;
                             orbit.pitch = -(half_pi - 0.01);
+                            orbit.zoom_to_fit = true;
                         }
                         if view_btn(ui, "Iso", "Isometric view (7)") {
                             orbit.yaw = quarter_pi;
                             orbit.pitch = quarter_pi;
+                            orbit.zoom_to_fit = true;
                         }
                         if view_btn(ui, "⊞", "Zoom to fit") {
                             orbit.zoom_to_fit = true;

@@ -174,36 +174,43 @@ fn orbit_camera_system(
         if keyboard.just_pressed(KeyCode::Numpad1) || keyboard.just_pressed(KeyCode::Digit1) {
             orbit.yaw = 0.0;
             orbit.pitch = 0.0;
+            orbit.zoom_to_fit = true;
         }
         // Back: looking along +Z
         if keyboard.just_pressed(KeyCode::Numpad2) || keyboard.just_pressed(KeyCode::Digit2) {
             orbit.yaw = std::f32::consts::PI;
             orbit.pitch = 0.0;
+            orbit.zoom_to_fit = true;
         }
         // Right: looking along -X
         if keyboard.just_pressed(KeyCode::Numpad3) || keyboard.just_pressed(KeyCode::Digit3) {
             orbit.yaw = std::f32::consts::FRAC_PI_2;
             orbit.pitch = 0.0;
+            orbit.zoom_to_fit = true;
         }
         // Left: looking along +X
         if keyboard.just_pressed(KeyCode::Numpad4) || keyboard.just_pressed(KeyCode::Digit4) {
             orbit.yaw = -std::f32::consts::FRAC_PI_2;
             orbit.pitch = 0.0;
+            orbit.zoom_to_fit = true;
         }
         // Top: looking down from above (+Y)
         if keyboard.just_pressed(KeyCode::Numpad5) || keyboard.just_pressed(KeyCode::Digit5) {
             orbit.yaw = 0.0;
             orbit.pitch = std::f32::consts::FRAC_PI_2 - 0.01;
+            orbit.zoom_to_fit = true;
         }
         // Bottom: looking up from below (-Y)
         if keyboard.just_pressed(KeyCode::Numpad6) || keyboard.just_pressed(KeyCode::Digit6) {
             orbit.yaw = 0.0;
             orbit.pitch = -(std::f32::consts::FRAC_PI_2 - 0.01);
+            orbit.zoom_to_fit = true;
         }
         // Isometric: default 45° view
         if keyboard.just_pressed(KeyCode::Numpad7) || keyboard.just_pressed(KeyCode::Digit7) {
             orbit.yaw = std::f32::consts::FRAC_PI_4;
             orbit.pitch = std::f32::consts::FRAC_PI_4;
+            orbit.zoom_to_fit = true;
         }
     } // end keyboard guard
 
