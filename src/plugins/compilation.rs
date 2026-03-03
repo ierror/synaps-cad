@@ -151,6 +151,7 @@ fn trigger_compilation_system(
     compilation_state.is_compiling = true;
 
     let code = scad_code.text.clone();
+    let fn_value = scad_code.fn_value;
     let (tx, rx) = mpsc::channel();
     compilation_state.result_receiver = Some(Mutex::new(rx));
 
@@ -160,13 +161,13 @@ fn trigger_compilation_system(
     std::thread::Builder::new()
         .stack_size(64 * 1024 * 1024)
         .spawn(move || {
-            let result = compile_openscad(&code);
+            let result = compile_openscad(&code, fn_value);
             let _ = tx.send(result);
         })
         .expect("Failed to spawn compilation thread");
 }
 
-fn compile_openscad(code: &str) -> CompilationResult {
+fn compile_openscad(code: &str, fn_value: u32) -> CompilationResult {
     use super::code_editor::{detect_views, set_active_view};
 
     // Empty code → clear the viewport (no error, just zero parts)
@@ -183,7 +184,7 @@ fn compile_openscad(code: &str) -> CompilationResult {
 
     // Catch panics from dependencies (e.g. spade triangulation)
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        compiler::compile_scad_code(code)
+        compiler::compile_scad_code(code, fn_value)
     }));
 
     let result = match result {

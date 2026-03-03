@@ -8,13 +8,16 @@ pub use rendering::render_orthographic_views;
 pub use evaluator::Evaluator;
 
 /// Full compilation pipeline: parse → evaluate → mesh conversion → rendering.
-pub fn compile_scad_code(code: &str) -> CompilationResult {
+pub fn compile_scad_code(code: &str, fn_override: u32) -> CompilationResult {
     let source_file = match openscad_rs::parse(code) {
         Ok(f) => f,
         Err(e) => return CompilationResult::Error(format!("Parse error: {e}")),
     };
 
     let mut evaluator = Evaluator::new();
+    if fn_override > 0 {
+        evaluator.variables.insert("$fn".into(), evaluator::value::Value::Number(fn_override as f64));
+    }
     let shapes = evaluator.eval_source_file(&source_file);
 
     let mut parts = Vec::new();
@@ -55,7 +58,7 @@ pub fn compile_scad_code(code: &str) -> CompilationResult {
 
 /// Lightweight compilation that only produces orthographic views (skips full mesh generation if possible).
 pub fn compile_views_only(code: &str) -> Result<Vec<ViewImage>, String> {
-    match compile_scad_code(code) {
+    match compile_scad_code(code, 0) {
         CompilationResult::Success { views, .. } => Ok(views),
         CompilationResult::Error(e) => Err(e),
     }

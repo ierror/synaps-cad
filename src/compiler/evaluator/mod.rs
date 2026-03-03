@@ -62,19 +62,13 @@ impl Evaluator {
     }
 
     /// Resolve `$fn` from either explicit args or global variable.
-    /// In preview mode, capped at 24 segments for performance.
     pub fn resolve_fn(&self, args: &[(Option<String>, Value)]) -> usize {
         let fn_val = Self::get_named_arg(args, "$fn")
             .and_then(Value::as_number)
             .or_else(|| self.variables.get("$fn").and_then(Value::as_number))
             .unwrap_or(0.0);
-        let n = if fn_val > 0.0 { fn_val as usize } else { 16 };
-        // Cap segments in preview mode for faster CSG operations
-        n.min(Self::PREVIEW_FN_CAP)
+        if fn_val > 0.0 { fn_val as usize } else { 16 }
     }
-
-    /// Maximum `$fn` value during preview to keep CSG tractable.
-    pub const PREVIEW_FN_CAP: usize = 24;
 
     // =======================================================================
     // Package & Statement evaluation

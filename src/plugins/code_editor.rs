@@ -9,6 +9,8 @@ pub struct ScadCode {
     pub editor_focused: bool,
     /// Tracks whether text changed while the editor had focus.
     pub changed_while_focused: bool,
+    /// Global `$fn` override — number of segments for curved surfaces.
+    pub fn_value: u32,
 }
 
 const DEFAULT_CODE: &str = r#"// Welcome to SynapsCAD!
@@ -75,6 +77,7 @@ impl Default for ScadCode {
             dirty: false,
             editor_focused: false,
             changed_while_focused: false,
+            fn_value: 16,
         }
     }
 }
