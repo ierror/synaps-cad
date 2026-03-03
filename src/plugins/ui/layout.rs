@@ -289,7 +289,7 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
                 let (label, texture) = &view_textures[view_idx];
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.image(egui::load::SizedTexture::new(texture.id(), egui::vec2(32.0, 32.0)));
+                    ui.image(egui::load::SizedTexture::new(texture.id(), egui::vec2(43.0, 43.0)));
                     ui.label(egui::RichText::new(format!("📷 {label}")).small().color(egui::Color32::from_rgb(140, 140, 160)));
                 });
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
