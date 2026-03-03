@@ -166,7 +166,7 @@ fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker:
         let mut enter_pressed = false;
         let mut attach_clicked = false;
 
-        let input_resp = ui.horizontal_top(|ui| {
+        let _input_resp = ui.horizontal_top(|ui| {
             let resp = ui.add(egui::TextEdit::multiline(&mut chat_state.input_buffer).hint_text("Ask the AI assistant...").desired_width(ui.available_width() - 68.0).desired_rows(3).lock_focus(true));
             ui.vertical(|ui| {
                 if chat_state.is_streaming {
@@ -189,19 +189,17 @@ fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker:
             });
         }
 
-        if input_resp.has_focus() {
-            if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) && !chat_state.input_history.is_empty() {
-                let idx = chat_state.history_index.map_or_else(|| chat_state.input_history.len() - 1, |i| i.saturating_sub(1));
-                chat_state.history_index = Some(idx);
-                let (text, images) = chat_state.input_history[idx].clone();
+        if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) && !chat_state.input_history.is_empty() {
+            let idx = chat_state.history_index.map_or_else(|| chat_state.input_history.len() - 1, |i| i.saturating_sub(1));
+            chat_state.history_index = Some(idx);
+            let (text, images) = chat_state.input_history[idx].clone();
+            chat_state.input_buffer = text; chat_state.pending_images = images;
+        } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) && let Some(idx) = chat_state.history_index {
+            if idx + 1 < chat_state.input_history.len() {
+                let new_idx = idx + 1; chat_state.history_index = Some(new_idx);
+                let (text, images) = chat_state.input_history[new_idx].clone();
                 chat_state.input_buffer = text; chat_state.pending_images = images;
-            } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) && let Some(idx) = chat_state.history_index {
-                if idx + 1 < chat_state.input_history.len() {
-                    let new_idx = idx + 1; chat_state.history_index = Some(new_idx);
-                    let (text, images) = chat_state.input_history[new_idx].clone();
-                    chat_state.input_buffer = text; chat_state.pending_images = images;
-                } else { chat_state.history_index = None; chat_state.input_buffer.clear(); chat_state.pending_images.clear(); }
-            }
+            } else { chat_state.history_index = None; chat_state.input_buffer.clear(); chat_state.pending_images.clear(); }
         }
 
         if ui.input(|i| i.key_pressed(egui::Key::V) && i.modifiers.command) && let Some(img) = clipboard_image_as_chat_image() { chat_state.pending_images.push(img); }
