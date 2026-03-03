@@ -116,41 +116,16 @@ fn add_gap_sections(
     }
 }
 
-pub fn show_image_preview(
-    ui: &egui::Ui,
-    img: &crate::plugins::ai_chat::ChatImage,
-    preview_state: &mut ImagePreviewState,
-) {
-    use base64::Engine;
-
-    let key = format!("{}_{}", img.filename, img.base64_data.len());
-    let texture = if preview_state.active.as_ref().is_some_and(|(k, _)| k == &key) {
-        preview_state.active.as_ref().unwrap().1.clone()
-    } else {
-        let Ok(raw) = base64::engine::general_purpose::STANDARD.decode(&img.base64_data) else { return; };
-        let Ok(dyn_img) = image::load_from_memory(&raw) else { return; };
-
-        let max_side = crate::app_config::MAX_TEXTURE_SIDE;
-        let dyn_img = if dyn_img.width() > max_side || dyn_img.height() > max_side {
-            dyn_img.resize(max_side, max_side, image::imageops::FilterType::Lanczos3)
-        } else {
-            dyn_img
-        };
-
-        let rgba = dyn_img.to_rgba8();
-        let size = [rgba.width() as usize, rgba.height() as usize];
-        let pixels = rgba.into_raw();
-        let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
-        let tex = ui.ctx().load_texture(&key, color_image, egui::TextureOptions::LINEAR);
-        preview_state.active = Some((key, tex.clone()));
-        tex
-    };
-
+pub fn show_texture_preview(ui: &egui::Ui, texture: &egui::TextureHandle) {
     let max_side = 400.0_f32;
     let [tw, th] = texture.size();
     #[allow(clippy::cast_precision_loss)]
     let aspect = tw as f32 / th.max(1) as f32;
-    let (w, h) = if tw >= th { (max_side, max_side / aspect) } else { (max_side * aspect, max_side) };
+    let (w, h) = if tw >= th {
+        (max_side, max_side / aspect)
+    } else {
+        (max_side * aspect, max_side)
+    };
 
     if let Some(pos) = ui.ctx().input(|i| i.pointer.hover_pos()) {
         egui::Area::new(egui::Id::new("img_preview_popup"))
@@ -168,6 +143,45 @@ pub fn show_image_preview(
                     });
             });
     }
+}
+
+pub fn show_image_preview(
+    ui: &egui::Ui,
+    img: &crate::plugins::ai_chat::ChatImage,
+    preview_state: &mut ImagePreviewState,
+) {
+    use base64::Engine;
+
+    let key = format!("{}_{}", img.filename, img.base64_data.len());
+    let texture = if preview_state.active.as_ref().is_some_and(|(k, _)| k == &key) {
+        preview_state.active.as_ref().unwrap().1.clone()
+    } else {
+        let Ok(raw) = base64::engine::general_purpose::STANDARD.decode(&img.base64_data) else {
+            return;
+        };
+        let Ok(dyn_img) = image::load_from_memory(&raw) else {
+            return;
+        };
+
+        let max_side = crate::app_config::MAX_TEXTURE_SIDE;
+        let dyn_img = if dyn_img.width() > max_side || dyn_img.height() > max_side {
+            dyn_img.resize(max_side, max_side, image::imageops::FilterType::Lanczos3)
+        } else {
+            dyn_img
+        };
+
+        let rgba = dyn_img.to_rgba8();
+        let size = [rgba.width() as usize, rgba.height() as usize];
+        let pixels = rgba.into_raw();
+        let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+        let tex = ui
+            .ctx()
+            .load_texture(&key, color_image, egui::TextureOptions::LINEAR);
+        preview_state.active = Some((key, tex.clone()));
+        tex
+    };
+
+    show_texture_preview(ui, &texture);
 }
 
 pub fn load_image_as_chat_image(path: &std::path::Path) -> Option<crate::plugins::ai_chat::ChatImage> {

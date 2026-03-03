@@ -315,7 +315,10 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
                     if let Some(ref elapsed) = elapsed_text {
                         ui.label(egui::RichText::new(elapsed).monospace().color(egui::Color32::from_rgb(200, 200, 210)));
                     }
-                    ui.image(egui::load::SizedTexture::new(texture.id(), egui::vec2(58.0, 58.0)));
+                    let img_resp = ui.image(egui::load::SizedTexture::new(texture.id(), egui::vec2(58.0, 58.0)));
+                    if img_resp.hovered() {
+                        crate::plugins::ui::utils::show_texture_preview(ui, texture);
+                    }
                     ui.label(egui::RichText::new(format!("📷 {label}")).small().color(egui::Color32::from_rgb(140, 140, 160)));
                 });
                 ui.ctx().request_repaint();
