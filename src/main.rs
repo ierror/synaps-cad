@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 
 mod app_config;
-mod compiler;
+pub mod compiler;
 mod export;
 mod plugins;
 

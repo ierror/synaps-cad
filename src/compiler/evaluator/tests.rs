@@ -1,0 +1,793 @@
+use super::*;
+use crate::compiler::{compile_scad_code, CompilationResult, MeshData};
+use crate::compiler::geometry::conversions::{bmesh_to_csg_mesh, bmesh_to_mesh_data};
+use csgrs::mesh::Mesh as CsgMesh;
+use csgrs::bmesh::BMesh;
+use csgrs::csg::CSG;
+
+#[test]
+fn test_star_difference() {
+    let code = r#"
+module star(points = 5, outer_r = 3, inner_r = 1.2, h = 2) {
+    linear_extrude(height = h)
+        polygon([for (i = [0:2*points-1])
+            let(r = (i % 2 == 0) ? outer_r : inner_r,
+                a = 90 + i * 180 / points)
+            [r * cos(a), r * sin(a)]
+        ]);
+}
+
+difference() {
+    cylinder(h = 1, r = 10, $fn = 64);
+    translate([0, 0, -0.5])
+        star(points = 5, outer_r = 5, inner_r = 2, h = 2);
+}
+"#;
+    let result = compile_scad_code(code);
+    match result {
+        CompilationResult::Success { parts, .. } => {
+            eprintln!("Parts: {}", parts.len());
+            for (i, p) in parts.iter().enumerate() {
+                eprintln!(
+                    "Part {i}: {} verts, {} tris",
+                    p.positions.len(),
+                    p.indices.len() / 3
+                );
+            }
+            assert!(
+                parts[0].indices.len() / 3 > 96,
+                "Expected more tris than plain cylinder (got {})",
+                parts[0].indices.len() / 3
+            );
+        }
+        CompilationResult::Error(e) => panic!("Compilation failed: {e}"),
+    }
+}
+
+#[test]
+fn test_star_polygon_standalone() {
+    let code = r#"
+linear_extrude(height = 2)
+    polygon([for (i = [0:9])
+        let(r = (i % 2 == 0) ? 5 : 2,
+            a = 90 + i * 36)
+        [r * cos(a), r * sin(a)]
+    ]);
+"#;
+    let result = compile_scad_code(code);
+    match result {
+        CompilationResult::Success { parts, .. } => {
+            eprintln!("Star standalone - Parts: {}", parts.len());
+            for (i, p) in parts.iter().enumerate() {
+                eprintln!(
+                    "Star part {i}: {} verts, {} tris",
+                    p.positions.len(),
+                    p.indices.len() / 3
+                );
+            }
+            assert!(!parts.is_empty(), "Star polygon should produce geometry");
+            assert!(parts[0].indices.len() > 0, "Star should have triangles");
+        }
+        CompilationResult::Error(e) => panic!("Compilation failed: {e}"),
+    }
+}
+
+#[test]
+fn test_text_basic() {
+    let code = r#"
+linear_extrude(height = 5)
+    text("Hello", size = 20);
+"#;
+    let result = compile_scad_code(code);
+    match result {
+        CompilationResult::Success { parts, warnings, .. } => {
+            assert!(!parts.is_empty(), "text() should produce geometry");
+            assert!(
+                parts[0].positions.len() > 10,
+                "Extruded text should have many vertices"
+            );
+            assert!(
+                !warnings.iter().any(|w: &String| w.contains("text() not yet supported")),
+                "text() should be supported now"
+            );
+        }
+        CompilationResult::Error(e) => panic!("Compilation failed: {e}"),
+    }
+}
+
+#[test]
+fn test_text_center_aligned() {
+    let code = r#"
+linear_extrude(height = 2)
+    text("A", size = 30, halign = "center", valign = "center");
+"#;
+    let result = compile_scad_code(code);
+    match result {
+        CompilationResult::Success { parts, .. } => {
+            assert!(!parts.is_empty(), "Centered text should produce geometry");
+            let has_neg_x = parts[0].positions.iter().any(|p| p[0] < 0.0);
+            let has_pos_x = parts[0].positions.iter().any(|p| p[0] > 0.0);
+            assert!(has_neg_x && has_pos_x, "Centered text should span origin in X");
+        }
+        CompilationResult::Error(e) => panic!("Compilation failed: {e}"),
+    }
+}
+
+#[test]
+fn test_text_with_font_style() {
+    let code = r#"
+linear_extrude(height = 3)
+    text("B", size = 20, font = "Liberation Sans:style=Bold");
+"#;
+    let result = compile_scad_code(code);
+    match result {
+        CompilationResult::Success { parts, .. } => {
+            assert!(!parts.is_empty(), "Bold text should produce geometry");
+        }
+        CompilationResult::Error(e) => panic!("Compilation failed: {e}"),
+    }
+}
+
+#[test]
+fn test_text_difference_on_cube() {
+    let code = r#"
+difference() {
+    cube([40, 40, 5]);
+    translate([0, 0, 3])
+        linear_extrude(height = 3)
+            text("Hi", size = 15, halign = "center", valign = "center");
+}
+"#;
+    let result = compile_scad_code(code);
+    match result {
+        CompilationResult::Success { parts, .. } => {
+            assert!(!parts.is_empty(), "Text engraving should produce geometry");
+            let tri_count = parts[0].indices.len() / 3;
+            assert!(
+                tri_count > 12,
+                "Engraved cube should have more than 12 triangles (plain cube), got {tri_count}"
+            );
+        }
+        CompilationResult::Error(e) => panic!("Compilation failed: {e}"),
+    }
+}
+
+#[test]
+fn test_text_2d_only() {
+    let code = r#"text("X", size = 10);"#;
+    let result = compile_scad_code(code);
+    match result {
+        CompilationResult::Success { parts, .. } => {
+            assert!(!parts.is_empty(), "2D text should render as thin geometry");
+        }
+        CompilationResult::Error(e) => panic!("2D text should not fail: {e}"),
+    }
+}
+
+#[test]
+fn test_text_direction() {
+    let code = r#"
+text( "Left to Right" ,size=5, direction="ltr");
+translate([5,0,0])
+    text( "Up" ,size=5, direction="btt");
+translate([20,0,0])
+    text( "Down" ,size=5, direction="ttb");
+translate([0,10,0])
+    text( "Right to left" ,size=5, direction="rtl");
+"#;
+    let result = compile_scad_code(code);
+    match result {
+        CompilationResult::Success { parts, .. } => {
+            assert_eq!(parts.len(), 4, "Should produce 4 text parts");
+            let rtl_x_min = parts[3].positions.iter().map(|p| p[0]).fold(f32::MAX, f32::min);
+            assert!(rtl_x_min >= -0.5, "RTL text should be in positive x region, got x_min={rtl_x_min}");
+            let btt_y_min = parts[1].positions.iter().map(|p| p[2]).fold(f32::MAX, f32::min);
+            assert!(btt_y_min > -0.5, "BTT text should be in positive y after mirror, got y_min={btt_y_min}");
+            let ttb_y_min = parts[2].positions.iter().map(|p| p[2]).fold(f32::MAX, f32::min);
+            assert!(ttb_y_min > -0.5, "TTB text should be in positive y after mirror, got y_min={ttb_y_min}");
+        }
+        CompilationResult::Error(e) => panic!("Text direction should not fail: {e}"),
+    }
+}
+
+#[test]
+fn test_axis_angle_rotate() {
+    let code = r#"
+rotate(a = 45, v = [1, 0, 0])
+    cube([10, 10, 10]);
+"#;
+    let result = compile_scad_code(code);
+    match result {
+        CompilationResult::Success { parts, .. } => {
+            assert!(!parts.is_empty(), "Should produce geometry");
+            assert!(
+                parts[0].indices.len() / 3 >= 12,
+                "Cube should have at least 12 tris"
+            );
+        }
+        CompilationResult::Error(e) => panic!("Compilation failed: {e}"),
+    }
+}
+
+fn compile_to_csg_mesh(code: &str) -> CsgMesh<()> {
+    bmesh_to_csg_mesh(&compile_to_bmesh(code))
+}
+
+fn compile_to_bmesh(code: &str) -> BMesh<()> {
+    let source_file = openscad_rs::parse(code).expect("parse error");
+    let mut evaluator = Evaluator::new();
+    let shapes = evaluator.eval_source_file(&source_file);
+    assert!(!shapes.is_empty(), "No geometry produced");
+    let mut iter = shapes.into_iter();
+    let (first, _) = iter.next().unwrap();
+    let mut result = first.into_bmesh();
+    for (shape, _) in iter {
+        result = result.union(&shape.into_bmesh());
+    }
+    result
+}
+
+fn csg_mesh_to_mesh_data_local(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
+    let bmesh = BMesh::from(mesh.clone());
+    bmesh_to_mesh_data(&bmesh)
+}
+
+fn compile_to_merged_mesh(code: &str) -> MeshData {
+    match compile_scad_code(code) {
+        CompilationResult::Success { parts, .. } => {
+            let mut positions = Vec::new();
+            let mut normals = Vec::new();
+            let mut indices = Vec::new();
+            for part in parts {
+                let offset = positions.len() as u32;
+                positions.extend(part.positions);
+                normals.extend(part.normals);
+                indices.extend(part.indices.iter().map(|i| i + offset));
+            }
+            MeshData {
+                positions,
+                normals,
+                indices,
+                color: None,
+            }
+        }
+        CompilationResult::Error(e) => panic!("Failed: {e}"),
+    }
+}
+
+fn analyze_csg_mesh(mesh: &CsgMesh<()>) -> (usize, usize, usize, usize) {
+    let total_polys = mesh.polygons.len();
+    let triangles = mesh
+        .polygons
+        .iter()
+        .filter(|p| p.vertices.len() == 3)
+        .count();
+    let quads = mesh
+        .polygons
+        .iter()
+        .filter(|p| p.vertices.len() == 4)
+        .count();
+    let large = mesh
+        .polygons
+        .iter()
+        .filter(|p| p.vertices.len() > 4)
+        .count();
+    (total_polys, triangles, quads, large)
+}
+
+#[test]
+fn test_scalar_vector_mul() {
+    let m = compile_to_merged_mesh("r=25; translate(r * [1, 0, 0]) cube(5);");
+    let xs: Vec<f64> = m.positions.iter().map(|p| p[0] as f64).collect();
+    let min_x = xs.iter().cloned().fold(f64::INFINITY, f64::min);
+    assert!(
+        min_x > 20.0,
+        "Expected translated to x≈25, got min_x={min_x}"
+    );
+}
+
+#[test]
+fn test_ring_of_children() {
+    let code = r#"
+module ring(radius, count){
+    for (a = [0 : count - 1]) {
+        angle = a * 360 / count;
+        translate(radius * [cos(angle), -sin(angle), 0])
+            children();
+    }
+}
+ring(20, 4) { cube(3); }
+"#;
+    let result = compile_scad_code(code);
+    match result {
+        CompilationResult::Success { parts, .. } => {
+            let total_verts: usize = parts.iter().map(|p| p.positions.len()).sum();
+            assert!(
+                total_verts >= 96,
+                "Expected 4 cubes, got {total_verts} verts"
+            );
+        }
+        CompilationResult::Error(e) => panic!("Failed: {e}"),
+    }
+}
+
+#[test]
+fn test_candle_stand() {
+    let code = r#"
+length=50; radius=25; count=7; centerCandle=true;
+candleSize=7; width=4; holeSize=3; CenterCandleWidth=4;
+heightOfSupport=3; widthOfSupport=3; heightOfRing=4; widthOfRing=23;
+
+cylinder(length,width-2);
+
+translate([0,0,length-candleSize/2])
+if(centerCandle){
+    difference(){
+        cylinder(candleSize,r=CenterCandleWidth);
+        cylinder(candleSize+1,r=CenterCandleWidth-2);
+    }
+}
+
+translate([0,0,length-candleSize/2]){
+    make(radius, count,candleSize,length);
+    make_ring_of(radius, count){ cylinder(1,r=width); }
+}
+
+for (a = [0 : count - 1]) {
+    rotate(a*360/count) {
+        translate([0, -width/2, 0]) cube([radius, widthOfSupport, heightOfSupport]);
+    }
+}
+
+module make(radius, count,candleSize,length){
+    difference(){
+        union(){
+            make_ring_of(radius, count){ cylinder(candleSize,r=width); }
+            for (a = [0 : count - 1]) {
+                rotate(a*360/count) {
+                    translate([0, -width/2, 0]) cube([radius, widthOfSupport, heightOfSupport]);
+                }
+            }
+            linear_extrude(heightOfRing)
+            difference(){ circle(radius); circle(widthOfRing); }
+        }
+        make_ring_of(radius, count){ cylinder(candleSize+1,r=holeSize); }
+    }
+}
+
+module make_ring_of(radius, count){
+    for (a = [0 : count - 1]) {
+        angle = a * 360 / count;
+        translate(radius * [cos(angle), -sin(angle), 0])
+            children();
+    }
+}
+"#;
+    let result = compile_scad_code(code);
+    match result {
+        CompilationResult::Success { parts, .. } => {
+            let total_verts: usize = parts.iter().map(|p| p.positions.len()).sum();
+            assert!(total_verts > 0);
+        }
+        CompilationResult::Error(e) => panic!("Compilation failed: {e}"),
+    }
+}
+
+#[test]
+fn test_hull_sphere_cube() {
+    let code = r#"
+$fn = 30;
+hull() {
+    sphere(r=14);
+    translate([0, 30, 0]) cube([30, 4, 30], center=true);
+}
+"#;
+    let csg = compile_to_csg_mesh(code);
+    let result = csg_mesh_to_mesh_data_local(&csg).expect("mesh conversion failed");
+    assert!(result.positions.len() > 10);
+}
+
+#[test]
+fn test_intersection_sphere_cube() {
+    let code = r#"
+$fn = 30;
+intersection() {
+    sphere(r=14);
+    translate([-14, -14, -14]) cube([28, 28, 14.4]);
+}
+"#;
+    let csg = compile_to_csg_mesh(code);
+    let result = csg_mesh_to_mesh_data_local(&csg).expect("mesh conversion failed");
+    assert!(result.positions.len() > 10);
+}
+
+#[test]
+fn test_difference_hull_shapes() {
+    let code = r#"
+$fn = 30;
+difference() {
+    hull() {
+        translate([0, 0, 0]) cube([36, 4, 33], center=true);
+        translate([0, 25, 10]) rotate([-35, 0, 0]) cylinder(h=8, r1=14, r2=22);
+    }
+    hull() {
+        translate([0, 0, 0]) sphere(r=12.5);
+        translate([0, 25, 10]) rotate([-35, 0, 0]) cylinder(h=9, r1=12.5, r2=20);
+    }
+}
+"#;
+    let csg = compile_to_csg_mesh(code);
+    let result = csg_mesh_to_mesh_data_local(&csg).expect("mesh conversion failed");
+    assert!(result.positions.len() > 10);
+}
+
+#[test]
+fn test_refill_clip() {
+    let code = REFILL_CLIP_CODE;
+    let csg = compile_to_csg_mesh(code);
+    let result = csg_mesh_to_mesh_data_local(&csg).expect("mesh conversion failed");
+    assert!(result.positions.len() > 100);
+}
+
+const REFILL_CLIP_CODE: &str = r#"
+$fn = 60;
+TANK_TOP_WIDTH = 256;
+TANK_BOTTOM_WIDTH = 244;
+TANK_HEIGHT = 110;
+TANK_WALL = 2.8;
+REFILL_SLOT_HEIGHT = 33.0;
+REFILL_SLOT_WIDTH = 30.4;
+REFILL_SLOT_CENTER_Z = TANK_HEIGHT - REFILL_SLOT_HEIGHT/2 + 0.5;
+REFILL_FUNNEL_TOP_R = 22;
+REFILL_FUNNEL_HEIGHT = 8;
+REFILL_FUNNEL_OFFSET = 25;
+REFILL_FUNNEL_TILT = 35;
+REFILL_CHANNEL_INNER = 25;
+REFILL_CHANNEL_WALL = 1.6;
+
+module RefillClip() {
+    clip_width = REFILL_SLOT_WIDTH - 0.4;
+    channel_outer_r = REFILL_CHANNEL_INNER/2 + REFILL_CHANNEL_WALL;
+    funnel_height = REFILL_FUNNEL_HEIGHT;
+    funnel_top_r = REFILL_FUNNEL_TOP_R;
+
+    y_wall_outer = TANK_TOP_WIDTH/2;
+    y_wall_inner = y_wall_outer - TANK_WALL;
+    slot_center_z = REFILL_SLOT_CENTER_Z;
+    slot_height = REFILL_SLOT_HEIGHT;
+    z_base = slot_center_z - slot_height/2;
+    body_top_z = min(z_base + slot_height, TANK_HEIGHT - 3);
+    body_mid_z = (z_base + body_top_z)/2;
+    funnel_base_z = body_top_z + 8;
+    flange_height = min(slot_height + 5, (TANK_HEIGHT - body_mid_z)*2);
+
+    y_funnel = y_wall_outer + REFILL_FUNNEL_OFFSET;
+    funnel_tilt = REFILL_FUNNEL_TILT;
+    funnel_anchor_overlap = 0.4;
+
+    module FunnelTransform() {
+        translate([0, y_funnel, funnel_base_z])
+            rotate([-funnel_tilt, 0, 0])
+                children();
+    }
+
+    module FunnelAnchor(radius) {
+        intersection() {
+            sphere(r=radius);
+            translate([-radius, -radius, -radius])
+                cube([radius * 2, radius * 2, radius + funnel_anchor_overlap]);
+        }
+    }
+
+    nozzle_length = z_base - 35;
+    y_nozzle = y_wall_inner - channel_outer_r - 2;
+
+    difference() {
+        union() {
+            translate([0, 0, z_base]) {
+                translate([0, y_wall_outer - TANK_WALL/2, body_mid_z - z_base])
+                    cube([clip_width, TANK_WALL, slot_height], center=true);
+                translate([0, y_wall_outer + 2, body_mid_z - z_base])
+                    cube([clip_width + 6, 4, flange_height], center=true);
+                translate([0, y_wall_inner - 2, body_mid_z - z_base])
+                    cube([clip_width + 6, 4, flange_height], center=true);
+            }
+
+            FunnelTransform()
+                cylinder(h=funnel_height, r1=channel_outer_r, r2=funnel_top_r);
+
+            hull() {
+                translate([0, y_wall_outer + 2, body_mid_z])
+                    cube([clip_width + 6, 4, slot_height], center=true);
+                FunnelTransform()
+                    cylinder(r=channel_outer_r, h=1);
+            }
+
+            hull() {
+                translate([0, y_nozzle, body_mid_z]) sphere(r=channel_outer_r);
+                translate([0, y_nozzle, z_base - nozzle_length]) cylinder(r=channel_outer_r, h=1);
+            }
+
+            hull() {
+                translate([0, y_wall_inner - 2, body_mid_z])
+                    cube([clip_width + 6, 4, 30], center=true);
+                translate([0, y_nozzle, body_mid_z])
+                    sphere(r=channel_outer_r);
+            }
+
+            hull() {
+                translate([0, y_wall_outer + 2, body_mid_z])
+                    cube([clip_width + 6, 4, 30], center=true);
+                translate([0, y_wall_inner - 2, body_mid_z])
+                    cube([clip_width + 6, 4, 30], center=true);
+            }
+
+            hull() {
+                FunnelTransform()
+                    FunnelAnchor(channel_outer_r);
+                translate([0, y_wall_outer, body_mid_z])
+                    sphere(r=channel_outer_r);
+                translate([0, y_nozzle, body_mid_z])
+                    sphere(r=channel_outer_r);
+            }
+        }
+
+        hull() {
+            FunnelTransform()
+                FunnelAnchor(REFILL_CHANNEL_INNER/2);
+            translate([0, y_wall_outer, body_mid_z])
+                sphere(r=REFILL_CHANNEL_INNER/2);
+            translate([0, y_nozzle, body_mid_z])
+                sphere(r=REFILL_CHANNEL_INNER/2);
+        }
+
+        FunnelTransform()
+            cylinder(h=funnel_height + 1, r1=REFILL_CHANNEL_INNER/2, r2=funnel_top_r - 2);
+
+        hull() {
+            translate([0, y_nozzle, body_mid_z]) sphere(r=REFILL_CHANNEL_INNER/2);
+            translate([0, y_nozzle, z_base - nozzle_length]) cylinder(r=REFILL_CHANNEL_INNER/2, h=1);
+        }
+
+        translate([0, y_nozzle, z_base - nozzle_length - 1])
+            cylinder(r=REFILL_CHANNEL_INNER/2, h=5);
+
+        cut_start_x = clip_width/2 - 0.5;
+        cut_end_x = clip_width/2 + 5;
+        groove_width = cut_end_x - cut_start_x;
+        groove_x_offset = cut_start_x + groove_width/2;
+
+        translate([-groove_x_offset, (y_wall_inner + y_wall_outer)/2, z_base + 12.5])
+            cube([groove_width, TANK_WALL + 1.0, 40], center=true);
+        translate([groove_x_offset, (y_wall_inner + y_wall_outer)/2, z_base + 12.5])
+            cube([groove_width, TANK_WALL + 1.0, 40], center=true);
+    }
+}
+
+RefillClip();
+"#;
+
+fn example_path(relative: &str) -> String {
+    format!(
+        "{}/tests/openscad_examples/{relative}",
+        env!("CARGO_MANIFEST_DIR")
+    )
+}
+
+fn assert_example_compiles(relative: &str) {
+    let path = example_path(relative);
+    let code = std::fs::read_to_string(&path).unwrap();
+    match compile_scad_code(&code) {
+        CompilationResult::Success { parts, .. } => {
+            assert!(!parts.is_empty());
+        }
+        CompilationResult::Error(e) => panic!("{relative}: compilation failed: {e}"),
+    }
+}
+
+fn assert_example_no_panic(relative: &str) {
+    let path = example_path(relative);
+    let code = std::fs::read_to_string(&path).unwrap();
+    let _ = std::panic::catch_unwind(|| compile_scad_code(&code));
+}
+
+#[derive(serde::Deserialize)]
+struct ReferenceData {
+    facets: usize,
+    bounding_box: BBox,
+}
+
+#[derive(serde::Deserialize)]
+struct BBox {
+    min: [f64; 3],
+    max: [f64; 3],
+}
+
+fn assert_example_matches_reference(relative: &str) {
+    let path = example_path(relative);
+    let code = std::fs::read_to_string(&path).unwrap();
+    let parts = match compile_scad_code(&code) {
+        CompilationResult::Success { parts, .. } => parts,
+        CompilationResult::Error(e) => panic!("{relative}: compilation failed: {e}"),
+    };
+    let ref_name = relative.replace(".scad", ".json");
+    let ref_path = format!("{}/tests/openscad_references/{ref_name}", env!("CARGO_MANIFEST_DIR"));
+    let ref_json = match std::fs::read_to_string(&ref_path) {
+        Ok(json) => json,
+        Err(_) => return,
+    };
+    let reference: ReferenceData = serde_json::from_str(&ref_json).unwrap();
+    let mut our_min = [f64::INFINITY; 3];
+    let mut our_max = [f64::NEG_INFINITY; 3];
+    let mut our_triangles: usize = 0;
+    for part in &parts {
+        our_triangles += part.indices.len() / 3;
+        for pos in &part.positions {
+            let zup = [f64::from(pos[0]), -f64::from(pos[2]), f64::from(pos[1])];
+            for i in 0..3 {
+                our_min[i] = our_min[i].min(zup[i]);
+                our_max[i] = our_max[i].max(zup[i]);
+            }
+        }
+    }
+    let ref_min = reference.bounding_box.min;
+    let ref_max = reference.bounding_box.max;
+    for i in 0..3 {
+        let ref_size = (ref_max[i] - ref_min[i]).abs();
+        let tol = f64::max(1.0, ref_size * 0.05);
+        assert!((our_min[i] - ref_min[i]).abs() <= tol);
+        assert!((our_max[i] - ref_max[i]).abs() <= tol);
+    }
+}
+
+#[test]
+fn openscad_basics_csg() { assert_example_matches_reference("Basics/CSG.scad"); }
+#[test]
+fn openscad_basics_csg_modules() { assert_example_matches_reference("Basics/CSG-modules.scad"); }
+#[test]
+fn openscad_basics_hull() { assert_example_matches_reference("Basics/hull.scad"); }
+#[test]
+fn openscad_basics_linear_extrude() { assert_example_no_panic("Basics/linear_extrude.scad"); }
+#[test]
+fn openscad_basics_logo() { assert_example_compiles("Basics/logo.scad"); }
+#[test]
+fn openscad_basics_rotate_extrude() { assert_example_compiles("Basics/rotate_extrude.scad"); }
+#[test]
+fn openscad_basics_letterblock() { assert_example_compiles("Basics/LetterBlock.scad"); }
+#[test]
+fn openscad_basics_logo_and_text() { assert_example_compiles("Basics/logo_and_text.scad"); }
+#[test]
+fn openscad_basics_projection() { assert_example_matches_reference("Basics/projection.scad"); }
+#[test]
+fn openscad_basics_roof() { assert_example_no_panic("Basics/roof.scad"); }
+#[test]
+fn openscad_basics_text_on_cube() { assert_example_matches_reference("Basics/text_on_cube.scad"); }
+#[test]
+fn openscad_functions_echo() { assert_example_no_panic("Functions/echo.scad"); }
+#[test]
+fn openscad_functions_functions() { assert_example_matches_reference("Functions/functions.scad"); }
+#[test]
+fn openscad_functions_list_comprehensions() { assert_example_no_panic("Functions/list_comprehensions.scad"); }
+#[test]
+fn openscad_functions_recursion() { assert_example_no_panic("Functions/recursion.scad"); }
+#[test]
+fn openscad_advanced_children() { assert_example_compiles("Advanced/children.scad"); }
+#[test]
+fn openscad_advanced_children_indexed() { assert_example_compiles("Advanced/children_indexed.scad"); }
+#[test]
+fn openscad_advanced_module_recursion() { assert_example_no_panic("Advanced/module_recursion.scad"); }
+#[test]
+fn openscad_advanced_geb() { assert_example_compiles("Advanced/GEB.scad"); }
+#[test]
+fn openscad_advanced_offset() { assert_example_compiles("Advanced/offset.scad"); }
+#[test]
+fn openscad_advanced_animation() { assert_example_compiles("Advanced/animation.scad"); }
+#[test]
+fn openscad_advanced_assert() { assert_example_matches_reference("Advanced/assert.scad"); }
+#[test]
+fn openscad_advanced_surface_image() { assert_example_no_panic("Advanced/surface_image.scad"); }
+#[test]
+fn openscad_old_example001() { assert_example_compiles("Old/example001.scad"); }
+#[test]
+fn openscad_old_example002() { assert_example_matches_reference("Old/example002.scad"); }
+#[test]
+fn openscad_old_example003() { assert_example_matches_reference("Old/example003.scad"); }
+#[test]
+fn openscad_old_example004() { assert_example_matches_reference("Old/example004.scad"); }
+#[test]
+fn openscad_old_example006() { assert_example_compiles("Old/example006.scad"); }
+#[test]
+fn openscad_old_example007() { assert_example_no_panic("Old/example007.scad"); }
+#[test]
+fn openscad_old_example008() { assert_example_no_panic("Old/example008.scad"); }
+#[test]
+fn openscad_old_example009() { assert_example_no_panic("Old/example009.scad"); }
+#[test]
+fn openscad_old_example010() { assert_example_no_panic("Old/example010.scad"); }
+#[test]
+fn openscad_old_example011() { assert_example_matches_reference("Old/example011.scad"); }
+#[test]
+fn openscad_old_example012() { assert_example_matches_reference("Old/example012.scad"); }
+#[test]
+fn openscad_old_example013() { assert_example_no_panic("Old/example013.scad"); }
+#[test]
+fn openscad_old_example014() { assert_example_compiles("Old/example014.scad"); }
+#[test]
+fn openscad_old_example015() { assert_example_no_panic("Old/example015.scad"); }
+#[test]
+fn openscad_old_example016() { assert_example_matches_reference("Old/example016.scad"); }
+#[test]
+fn openscad_old_example018() { assert_example_compiles("Old/example018.scad"); }
+#[test]
+fn openscad_old_example019() { assert_example_matches_reference("Old/example019.scad"); }
+#[test]
+fn openscad_old_example021() { assert_example_compiles("Old/example021.scad"); }
+#[test]
+fn openscad_old_example022() { assert_example_matches_reference("Old/example022.scad"); }
+#[test]
+fn openscad_old_example023() { assert_example_no_panic("Old/example023.scad"); }
+#[test]
+fn openscad_old_example024() { assert_example_matches_reference("Old/example024.scad"); }
+#[test]
+fn openscad_parametric_candlestand() { assert_example_matches_reference("Parametric/candleStand.scad"); }
+#[test]
+fn openscad_parametric_sign() { assert_example_matches_reference("Parametric/sign.scad"); }
+#[test]
+fn openscad_basics_dodecahedron_difference() { assert_example_matches_reference("Basics/dodecahedron_difference.scad"); }
+
+fn dodecahedron_scad() -> &'static str {
+    r#"
+    phi = (1 + sqrt(5)) / 2;
+    points = [
+        [ 1,  1,  1], [ 1,  1, -1], [ 1, -1,  1], [ 1, -1, -1],
+        [-1,  1,  1], [-1,  1, -1], [-1, -1,  1], [-1, -1, -1],
+        [0,  1/phi,  phi], [0,  1/phi, -phi], [0, -1/phi,  phi], [0, -1/phi, -phi],
+        [ 1/phi,  phi, 0], [ 1/phi, -phi, 0], [-1/phi,  phi, 0], [-1/phi, -phi, 0],
+        [ phi, 0,  1/phi], [ phi, 0, -1/phi], [-phi, 0,  1/phi], [-phi, 0, -1/phi]
+    ];
+    faces = [
+        [0,8,10,2,16],  [0,16,17,1,12], [0,12,14,4,8],
+        [1,17,3,11,9],  [1,9,5,14,12],  [2,10,6,15,13],
+        [2,13,3,17,16], [3,13,15,7,11], [4,14,5,19,18],
+        [4,18,6,10,8],  [5,9,11,7,19],  [6,18,19,7,15]
+    ];
+    "#
+}
+
+#[test]
+fn test_polyhedron_pentagon_faces_standalone() {
+    let code = format!("{} polyhedron(points=points, faces=faces);", dodecahedron_scad());
+    match compile_scad_code(&code) {
+        CompilationResult::Success { parts, .. } => {
+            assert!(!parts.is_empty());
+            let total_tris: usize = parts.iter().map(|p| p.positions.len() / 3).sum();
+            assert!(total_tris >= 36);
+        }
+        CompilationResult::Error(e) => panic!("compilation failed: {e}"),
+    }
+}
+
+#[test]
+fn test_cone_zero_r1() {
+    let code = "cylinder(h=5, r1=0, r2=10, $fn=12);";
+    match compile_scad_code(code) {
+        CompilationResult::Success { parts, .. } => { assert!(!parts.is_empty()); }
+        CompilationResult::Error(e) => panic!("compilation failed: {e}"),
+    }
+}
+
+#[test]
+fn test_color_named_and_rgb() {
+    let code = r#"
+color("red") cube(10);
+color("green") translate([20, 0, 0]) sphere(5, $fn=12);
+color([0.2, 0.4, 0.8]) translate([40, 0, 0]) cylinder(h=10, r=5, $fn=12);
+"#;
+    match compile_scad_code(code) {
+        CompilationResult::Success { parts, .. } => {
+            assert_eq!(parts.len(), 3);
+            assert_eq!(parts[0].color, Some([1.0, 0.0, 0.0]));
+        }
+        CompilationResult::Error(e) => panic!("Color test failed: {e}"),
+    }
+}

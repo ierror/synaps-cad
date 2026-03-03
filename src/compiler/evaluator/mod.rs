@@ -1,0 +1,609 @@
+use std::collections::HashMap;
+use openscad_rs::ast::{Argument, Expr, Parameter, SourceFile, Statement};
+
+use super::geometry::{Shape, BoolOp, TransformKind};
+
+pub mod value;
+pub use value::Value;
+
+pub mod primitives;
+pub mod transformations;
+pub mod booleans;
+pub mod builtins;
+
+#[cfg(test)]
+mod tests;
+
+/// Stored user-defined module.
+#[derive(Clone)]
+pub struct UserModule {
+    pub params: Vec<(String, Option<Expr>)>,
+    pub body: Vec<Statement>,
+}
+
+/// Stored user-defined function.
+#[derive(Clone)]
+pub struct UserFunction {
+    pub params: Vec<(String, Option<Expr>)>,
+    pub body_expr: Expr,
+}
+
+pub struct Evaluator {
+    pub variables: HashMap<String, Value>,
+    pub modules: HashMap<String, UserModule>,
+    pub functions: HashMap<String, UserFunction>,
+    /// Stack of call-site children for `children()` calls inside user modules.
+    pub children_stack: Vec<Vec<Statement>>,
+    /// Recursion depth counter to prevent stack overflow.
+    pub depth: usize,
+    /// Stack of active colors from nested `color()` calls.
+    pub color_stack: Vec<[f32; 3]>,
+    /// Warnings collected during evaluation (shown to the user after compilation).
+    pub warnings: Vec<String>,
+}
+
+impl Evaluator {
+    pub fn new() -> Self {
+        let mut variables = HashMap::new();
+        variables.insert("$fn".into(), Value::Number(0.0));
+        variables.insert("$fa".into(), Value::Number(12.0));
+        variables.insert("$fs".into(), Value::Number(2.0));
+        variables.insert("PI".into(), Value::Number(std::f64::consts::PI));
+        variables.insert("$preview".into(), Value::Bool(true));
+        Self {
+            variables,
+            modules: HashMap::new(),
+            functions: HashMap::new(),
+            children_stack: Vec::new(),
+            depth: 0,
+            color_stack: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+
+    /// Resolve `$fn` from either explicit args or global variable.
+    /// In preview mode, capped at 24 segments for performance.
+    pub fn resolve_fn(&self, args: &[(Option<String>, Value)]) -> usize {
+        let fn_val = Self::get_named_arg(args, "$fn")
+            .and_then(Value::as_number)
+            .or_else(|| self.variables.get("$fn").and_then(Value::as_number))
+            .unwrap_or(0.0);
+        let n = if fn_val > 0.0 { fn_val as usize } else { 16 };
+        // Cap segments in preview mode for faster CSG operations
+        n.min(Self::PREVIEW_FN_CAP)
+    }
+
+    /// Maximum `$fn` value during preview to keep CSG tractable.
+    pub const PREVIEW_FN_CAP: usize = 24;
+
+    // =======================================================================
+    // Package & Statement evaluation
+    // =======================================================================
+
+    pub fn eval_source_file(&mut self, source_file: &SourceFile) -> Vec<(Shape, Option<[f32; 3]>)> {
+        // First pass: register ALL module and function definitions in the file
+        self.register_definitions(&source_file.statements);
+
+        // Second pass: evaluate geometry with color tracking
+        let mut shapes = Vec::new();
+        for stmt in &source_file.statements {
+            self.eval_statement(stmt, &mut shapes);
+        }
+        shapes
+    }
+
+    /// Recursively scan statements to register module/function definitions.
+    pub fn register_definitions(&mut self, stmts: &[Statement]) {
+        for stmt in stmts {
+            match stmt {
+                Statement::ModuleDefinition {
+                    name, params, body, ..
+                } => {
+                    self.register_module(name, params, body);
+                    self.register_definitions(body);
+                }
+                Statement::FunctionDefinition {
+                    name, params, body, ..
+                } => {
+                    self.register_function(name, params, body);
+                }
+                Statement::ModuleInstantiation { children, .. } => {
+                    self.register_definitions(children);
+                }
+                Statement::IfElse {
+                    then_body,
+                    else_body,
+                    ..
+                } => {
+                    self.register_definitions(then_body);
+                    if let Some(eb) = else_body {
+                        self.register_definitions(eb);
+                    }
+                }
+                Statement::Block { body, .. } => {
+                    self.register_definitions(body);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn eval_statement(&mut self, stmt: &Statement, shapes: &mut Vec<(Shape, Option<[f32; 3]>)>) {
+        match stmt {
+            Statement::ModuleInstantiation {
+                name,
+                args,
+                children,
+                ..
+            } => {
+                // Handle for/let/color as special module instantiations
+                match name.as_str() {
+                    "for" | "intersection_for" => {
+                        shapes.extend(self.eval_for_from_instantiation(args, children));
+                    }
+                    "let" => {
+                        self.eval_let_instantiation(args, children, shapes);
+                    }
+                    "color" => {
+                        let eval_args = self.eval_arguments(args);
+                        self.eval_color_into(children, &eval_args, shapes);
+                    }
+                    "translate" | "rotate" | "scale" | "mirror" => {
+                        let eval_args = self.eval_arguments(args);
+                        let kind = match name.as_str() {
+                            "translate" => TransformKind::Translate,
+                            "rotate" => TransformKind::Rotate,
+                            "scale" => TransformKind::Scale,
+                            _ => TransformKind::Mirror,
+                        };
+                        self.eval_transform_into(children, &eval_args, kind, shapes);
+                    }
+                    _ => {
+                        // Check for user-defined module — evaluate body directly
+                        // to preserve per-shape colors
+                        if let Some(user_mod) = self.modules.get(name).cloned() {
+                            let eval_args = self.eval_arguments(args);
+                            self.eval_user_module_into(&user_mod, &eval_args, children, shapes);
+                        } else if let Some(s) =
+                            self.eval_module_instantiation_inner(name, args, children)
+                        {
+                            let color = self.color_stack.last().copied();
+                            shapes.push((s, color));
+                        }
+                    }
+                }
+            }
+            Statement::Assignment { name, expr, .. } => {
+                let val = self.eval_expr(expr);
+                self.variables.insert(name.clone(), val);
+            }
+            Statement::IfElse {
+                condition,
+                then_body,
+                else_body,
+                ..
+            } => {
+                shapes.extend(self.eval_if_else(condition, then_body, else_body.as_ref()));
+            }
+            Statement::Block { body, .. } => {
+                for s in body {
+                    self.eval_statement(s, shapes);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn eval_for_from_instantiation(
+        &mut self,
+        args: &[Argument],
+        children: &[Statement],
+    ) -> Vec<(Shape, Option<[f32; 3]>)> {
+        // Collect loop variable assignments: for(i=[0:10], j=[0:5])
+        let loop_vars: Vec<(String, Value)> = args
+            .iter()
+            .filter_map(|arg| {
+                let name = arg.name.as_ref()?.clone();
+                let val = self.eval_expr(&arg.value);
+                Some((name, val))
+            })
+            .collect();
+
+        self.eval_for_nested(&loop_vars, 0, children)
+    }
+
+    pub fn eval_for_nested(
+        &mut self,
+        loop_vars: &[(String, Value)],
+        depth: usize,
+        children: &[Statement],
+    ) -> Vec<(Shape, Option<[f32; 3]>)> {
+        if depth >= loop_vars.len() {
+            return self.eval_statement_list(children);
+        }
+
+        let (name, range_val) = &loop_vars[depth];
+        let items = range_val.to_iterable();
+        let saved = self.variables.get(name).cloned();
+
+        let mut results = Vec::new();
+        for item in items {
+            self.variables.insert(name.clone(), item);
+            results.extend(self.eval_for_nested(loop_vars, depth + 1, children));
+        }
+
+        // Restore variable
+        match saved {
+            Some(v) => {
+                self.variables.insert(name.clone(), v);
+            }
+            None => {
+                self.variables.remove(name);
+            }
+        }
+        results
+    }
+
+    pub fn eval_let_instantiation(
+        &mut self,
+        args: &[Argument],
+        children: &[Statement],
+        shapes: &mut Vec<(Shape, Option<[f32; 3]>)>,
+    ) {
+        let saved = self.variables.clone();
+        for arg in args {
+            if let Some(name) = &arg.name {
+                let val = self.eval_expr(&arg.value);
+                self.variables.insert(name.clone(), val);
+            }
+        }
+        for stmt in children {
+            self.eval_statement(stmt, shapes);
+        }
+        self.variables = saved;
+    }
+
+    pub fn eval_statement_list(&mut self, stmts: &[Statement]) -> Vec<(Shape, Option<[f32; 3]>)> {
+        let mut shapes = Vec::new();
+        for stmt in stmts {
+            self.eval_statement(stmt, &mut shapes);
+        }
+        shapes
+    }
+
+    pub fn eval_if_else(
+        &mut self,
+        condition: &Expr,
+        then_body: &[Statement],
+        else_body: Option<&Vec<Statement>>,
+    ) -> Vec<(Shape, Option<[f32; 3]>)> {
+        let cond_val = self.eval_expr(condition);
+
+        if cond_val.as_bool() {
+            self.eval_statement_list(then_body)
+        } else if let Some(eb) = else_body {
+            self.eval_statement_list(eb)
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn register_module(&mut self, name: &str, params: &[Parameter], body: &[Statement]) {
+        let extracted_params = Self::extract_params(params);
+        self.modules.insert(
+            name.to_string(),
+            UserModule {
+                params: extracted_params,
+                body: body.to_vec(),
+            },
+        );
+    }
+
+    pub fn register_function(&mut self, name: &str, params: &[Parameter], body: &Expr) {
+        let extracted_params = Self::extract_params(params);
+        self.functions.insert(
+            name.to_string(),
+            UserFunction {
+                params: extracted_params,
+                body_expr: body.clone(),
+            },
+        );
+    }
+
+    fn extract_params(params: &[Parameter]) -> Vec<(String, Option<Expr>)> {
+        params
+            .iter()
+            .map(|p| (p.name.clone(), p.default.clone()))
+            .collect()
+    }
+
+    pub fn eval_user_module_into(
+        &mut self,
+        user_mod: &UserModule,
+        args: &[(Option<String>, Value)],
+        call_site_children: &[Statement],
+        shapes: &mut Vec<(Shape, Option<[f32; 3]>)>,
+    ) {
+        const MAX_DEPTH: usize = 512;
+        self.depth += 1;
+        if self.depth > MAX_DEPTH {
+            self.warnings
+                .push(format!("Maximum recursion depth ({MAX_DEPTH}) exceeded"));
+            self.depth -= 1;
+            return;
+        }
+
+        let saved_vars = self.variables.clone();
+        self.children_stack.push(call_site_children.to_vec());
+
+        // Bind parameters
+        let mut pos_idx = 0;
+        for (param_name, default_expr) in &user_mod.params {
+            let named = Self::get_named_arg(args, param_name).cloned();
+            let val = named.unwrap_or_else(|| {
+                let v = Self::get_positional_arg(args, pos_idx).cloned();
+                pos_idx += 1;
+                v.or_else(|| default_expr.as_ref().map(|e| self.eval_expr(e)))
+                    .unwrap_or(Value::Undef)
+            });
+            self.variables.insert(param_name.clone(), val);
+        }
+        for (name, val) in args {
+            if let Some(n) = name
+                && n.starts_with('$')
+            {
+                self.variables.insert(n.clone(), val.clone());
+            }
+        }
+
+        for stmt in &user_mod.body {
+            self.eval_statement(stmt, shapes);
+        }
+
+        self.variables = saved_vars;
+        self.children_stack.pop();
+        self.depth -= 1;
+    }
+
+    pub fn eval_user_module(
+        &mut self,
+        user_mod: &UserModule,
+        args: &[(Option<String>, Value)],
+        call_site_children: &[Statement],
+    ) -> Option<Shape> {
+        let saved_vars = self.variables.clone();
+        self.children_stack.push(call_site_children.to_vec());
+
+        let mut pos_idx = 0;
+        for (param_name, default_expr) in &user_mod.params {
+            let named = Self::get_named_arg(args, param_name).cloned();
+            let val = named.unwrap_or_else(|| {
+                let v = Self::get_positional_arg(args, pos_idx).cloned();
+                pos_idx += 1;
+                v.or_else(|| default_expr.as_ref().map(|e| self.eval_expr(e)))
+                    .unwrap_or(Value::Undef)
+            });
+            self.variables.insert(param_name.clone(), val);
+        }
+
+        for (name, val) in args {
+            if let Some(n) = name
+                && n.starts_with('$')
+            {
+                self.variables.insert(n.clone(), val.clone());
+            }
+        }
+
+        let mut meshes = Vec::new();
+        for stmt in &user_mod.body {
+            self.eval_statement(stmt, &mut meshes);
+        }
+
+        self.variables = saved_vars;
+        self.children_stack.pop();
+
+        if meshes.is_empty() {
+            None
+        } else {
+            let mut iter = meshes.into_iter();
+            let (mut result, _) = iter.next().unwrap();
+            for (m, _) in iter {
+                result = result.union(m);
+            }
+            Some(result)
+        }
+    }
+
+    pub fn eval_module_instantiation_inner(
+        &mut self,
+        name: &str,
+        raw_args: &[Argument],
+        children: &[Statement],
+    ) -> Option<Shape> {
+        const MAX_DEPTH: usize = 512;
+        self.depth += 1;
+        if self.depth > MAX_DEPTH {
+            self.warnings.push(format!(
+                "Maximum recursion depth ({MAX_DEPTH}) exceeded in {name}()"
+            ));
+            self.depth -= 1;
+            return None;
+        }
+        let result = self.eval_module_instantiation_dispatch(name, raw_args, children);
+        self.depth -= 1;
+        result
+    }
+
+    pub fn eval_module_instantiation_dispatch(
+        &mut self,
+        name: &str,
+        raw_args: &[Argument],
+        children: &[Statement],
+    ) -> Option<Shape> {
+        let args = self.eval_arguments(raw_args);
+
+        match name {
+            // --- 3D primitives ---
+            "cube" => self.eval_cube(&args),
+            "sphere" => self.eval_sphere(&args),
+            "cylinder" => self.eval_cylinder(&args),
+            "polyhedron" => self.eval_polyhedron(&args),
+
+            // --- 2D primitives ---
+            "circle" => self.eval_circle(&args),
+            "square" => self.eval_square(&args),
+            "polygon" => self.eval_polygon(&args),
+            "text" => self.eval_text(&args),
+
+            // --- Boolean operations ---
+            "union" => self.eval_boolean_op(children, BoolOp::Union),
+            "difference" => self.eval_boolean_op(children, BoolOp::Difference),
+            "intersection" => self.eval_boolean_op(children, BoolOp::Intersection),
+
+            // --- Transformations ---
+            "translate" => self.eval_transform(children, &args, TransformKind::Translate),
+            "rotate" => self.eval_transform(children, &args, TransformKind::Rotate),
+            "scale" => self.eval_transform(children, &args, TransformKind::Scale),
+            "mirror" => self.eval_transform(children, &args, TransformKind::Mirror),
+            "multmatrix" => {
+                self.warnings
+                    .push("multmatrix() not yet supported, passing through children".into());
+                self.eval_passthrough_children(children)
+            }
+            "offset" => self.eval_offset(children, &args),
+            "resize" | "projection" | "render" | "group" | "import" | "surface" => {
+                self.eval_passthrough_children(children)
+            }
+
+            // --- Extrusions ---
+            "linear_extrude" => self.eval_linear_extrude(children, &args),
+            "rotate_extrude" => self.eval_rotate_extrude(children, &args),
+
+            // --- Other ---
+            "hull" => self.eval_hull(children),
+            "minkowski" => {
+                let child_shapes = self.eval_children(children);
+                if child_shapes.len() >= 2 {
+                    let mut iter = child_shapes.into_iter();
+                    let base = iter.next().unwrap().into_csg_mesh();
+                    let tool = iter.next().unwrap().into_csg_mesh();
+                    Some(Shape::from_csg_mesh(base.minkowski_sum(&tool)))
+                } else {
+                    self.eval_passthrough_children(children)
+                }
+            }
+            "echo" => {
+                self.eval_echo(&args);
+                self.eval_passthrough_children(children)
+            }
+            "children" => {
+                // Evaluate call-site children from the parent user module
+                self.children_stack
+                    .last()
+                    .cloned()
+                    .and_then(|call_site_children| {
+                        let shapes = self.eval_children(&call_site_children);
+                        if shapes.is_empty() {
+                            None
+                        } else {
+                            let mut iter = shapes.into_iter();
+                            let mut result = iter.next().unwrap();
+                            for s in iter {
+                                result = result.union(s);
+                            }
+                            Some(result)
+                        }
+                    })
+            }
+
+            _ => {
+                if let Some(user_mod) = self.modules.get(name).cloned() {
+                    self.eval_user_module(&user_mod, &args, children)
+                } else {
+                    self.warnings
+                        .push(format!("Unknown module: {name}(), skipping"));
+                    None
+                }
+            }
+        }
+    }
+
+    pub fn eval_arguments(&mut self, args: &[Argument]) -> Vec<(Option<String>, Value)> {
+        args.iter()
+            .map(|arg| {
+                let val = self.eval_expr(&arg.value);
+                (arg.name.clone(), val)
+            })
+            .collect()
+    }
+
+    pub fn get_named_arg<'a>(args: &'a [(Option<String>, Value)], name: &str) -> Option<&'a Value> {
+        args.iter()
+            .find(|(n, _)| n.as_deref() == Some(name))
+            .map(|(_, v)| v)
+    }
+
+    pub fn get_positional_arg(args: &[(Option<String>, Value)], idx: usize) -> Option<&Value> {
+        let mut pos = 0;
+        for (name, val) in args {
+            if name.is_none() {
+                if pos == idx {
+                    return Some(val);
+                }
+                pos += 1;
+            }
+        }
+        None
+    }
+
+    pub fn get_arg<'a>(
+        args: &'a [(Option<String>, Value)],
+        name: &str,
+        pos: usize,
+    ) -> Option<&'a Value> {
+        Self::get_named_arg(args, name).or_else(|| Self::get_positional_arg(args, pos))
+    }
+
+    pub fn get_arg_number(args: &[(Option<String>, Value)], name: &str, pos: usize) -> Option<f64> {
+        Self::get_arg(args, name, pos).and_then(Value::as_number)
+    }
+
+    pub fn get_arg_bool(
+        args: &[(Option<String>, Value)],
+        name: &str,
+        pos: usize,
+        default: bool,
+    ) -> bool {
+        Self::get_arg(args, name, pos).map_or(default, Value::as_bool)
+    }
+
+    pub fn eval_children(&mut self, children: &[Statement]) -> Vec<Shape> {
+        let mut result = Vec::new();
+        for stmt in children {
+            let mut shapes = Vec::new();
+            self.eval_statement(stmt, &mut shapes);
+            if !shapes.is_empty() {
+                let mut iter = shapes.into_iter().map(|(s, _)| s);
+                let mut merged = iter.next().unwrap();
+                for s in iter {
+                    merged = merged.union(s);
+                }
+                result.push(merged);
+            }
+        }
+        result
+    }
+
+    pub fn eval_passthrough_children(&mut self, children: &[Statement]) -> Option<Shape> {
+        let child_shapes = self.eval_children(children);
+        if child_shapes.is_empty() {
+            return None;
+        }
+        let mut iter = child_shapes.into_iter();
+        let mut result = iter.next().unwrap();
+        for child in iter {
+            result = result.union(child);
+        }
+        Some(result)
+    }
+}

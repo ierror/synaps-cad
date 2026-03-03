@@ -1,0 +1,136 @@
+use openscad_rs::ast::Statement;
+use csgrs::mesh::Mesh as CsgMesh;
+
+use super::{Evaluator, Value};
+use crate::compiler::geometry::{Shape, BoolOp};
+
+impl Evaluator {
+    pub fn eval_boolean_op(&mut self, children: &[Statement], op: BoolOp) -> Option<Shape> {
+        let child_shapes = self.eval_children(children);
+        if child_shapes.is_empty() {
+            return None;
+        }
+
+        let mut iter = child_shapes.into_iter();
+        let first = iter.next().unwrap();
+
+        match op {
+            BoolOp::Union => {
+                let rest: Vec<Shape> = iter.collect();
+                if rest.is_empty() {
+                    return Some(first);
+                }
+                let mut result = first;
+                for child in rest {
+                    result = result.union(child);
+                }
+                Some(result)
+            }
+            BoolOp::Difference => {
+                let rest: Vec<Shape> = iter.collect();
+                if rest.is_empty() {
+                    return Some(first);
+                }
+                let mut tool_iter = rest.into_iter();
+                let mut tool = tool_iter.next().unwrap();
+                for t in tool_iter {
+                    tool = tool.union(t);
+                }
+                Some(first.difference(tool))
+            }
+            BoolOp::Intersection => {
+                let mut result = first;
+                for child in iter {
+                    result = result.intersection(child);
+                }
+                Some(result)
+            }
+        }
+    }
+
+    pub fn eval_offset(
+        &mut self,
+        children: &[Statement],
+        args: &[(Option<String>, Value)],
+    ) -> Option<Shape> {
+        let r = Self::get_arg_number(args, "r", 99);
+        let delta = Self::get_arg_number(args, "delta", 99);
+
+        let child_shapes = self.eval_children(children);
+        if child_shapes.is_empty() {
+            return None;
+        }
+        let sketch = self.shapes_to_sketch(&child_shapes)?;
+
+        if let Some(r_val) = r {
+            if r_val.abs() > 1e-12 {
+                Some(Shape::Sketch2D(sketch.offset_rounded(r_val)))
+            } else {
+                Some(Shape::Sketch2D(sketch))
+            }
+        } else if let Some(d_val) = delta {
+            if d_val.abs() > 1e-12 {
+                Some(Shape::Sketch2D(sketch.offset(d_val)))
+            } else {
+                Some(Shape::Sketch2D(sketch))
+            }
+        } else {
+            let d = Self::get_arg_number(args, "", 0).unwrap_or(0.0);
+            if d.abs() > 1e-12 {
+                Some(Shape::Sketch2D(sketch.offset(d)))
+            } else {
+                Some(Shape::Sketch2D(sketch))
+            }
+        }
+    }
+
+    pub fn eval_hull(&mut self, children: &[Statement]) -> Option<Shape> {
+        let child_shapes = self.eval_children(children);
+        if child_shapes.is_empty() {
+            return None;
+        }
+        let mut all_polygons = Vec::new();
+        for shape in child_shapes {
+            let mesh = shape.into_csg_mesh();
+            all_polygons.extend(mesh.polygons);
+        }
+        let combined = CsgMesh::from_polygons(&all_polygons, None);
+        Some(Shape::from_csg_mesh(combined.convex_hull()))
+    }
+
+    pub fn eval_color_into(
+        &mut self,
+        children: &[Statement],
+        args: &[(Option<String>, Value)],
+        shapes: &mut Vec<(Shape, Option<[f32; 3]>)>,
+    ) {
+        let rgb = crate::compiler::evaluator::Evaluator::parse_color_args(args);
+        if let Some(c) = rgb {
+            self.color_stack.push(c);
+        }
+        for stmt in children {
+            self.eval_statement(stmt, shapes);
+        }
+        if rgb.is_some() {
+            self.color_stack.pop();
+        }
+    }
+
+    pub fn parse_color_args(args: &[(Option<String>, Value)]) -> Option<[f32; 3]> {
+        let first = args.first().map(|(_, v)| v)?;
+        match first {
+            Value::String(name) => crate::compiler::rendering::colors::named_color(name),
+            Value::List(items) => {
+                if items.len() >= 3 {
+                    let r = items[0].as_number()? as f32;
+                    let g = items[1].as_number()? as f32;
+                    let b = items[2].as_number()? as f32;
+                    Some([r, g, b])
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+}

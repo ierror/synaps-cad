@@ -190,7 +190,7 @@ fn compile_openscad(code: &str) -> CompilationResult {
         Ok(r) => r,
         Err(panic_info) => {
             #[allow(clippy::option_if_let_else)]
-            let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+            let msg = if let Some(s) = panic_info.downcast_ref::<&'static str>() {
                 (*s).to_string()
             } else if let Some(s) = panic_info.downcast_ref::<String>() {
                 s.clone()
@@ -235,12 +235,13 @@ fn compile_openscad(code: &str) -> CompilationResult {
                     }
                     let mut alt_code = code.to_string();
                     if set_active_view(&mut alt_code, view_name) {
-                        let alt_views = compiler::compile_views_only(&alt_code, 128);
-                        if !alt_views.is_empty() {
-                            other_views.push((
-                                view_name.clone(),
-                                alt_views.into_iter().map(|v| (v.label, v.base64_png)).collect(),
-                            ));
+                        if let Ok(alt_views) = compiler::compile_views_only(&alt_code) {
+                            if !alt_views.is_empty() {
+                                other_views.push((
+                                    view_name.clone(),
+                                    alt_views.into_iter().map(|v| (v.label, v.base64_png)).collect(),
+                                ));
+                            }
                         }
                     }
                 }
