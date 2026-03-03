@@ -318,13 +318,16 @@ fn render_code_header(ui: &mut egui::Ui, scad_code: &mut ScadCode, chat_state: &
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.add_enabled(!compilation_state.is_compiling, egui::Button::new(if compilation_state.is_compiling { "Compiling..." } else { "Compile" })).clicked() { scad_code.dirty = true; }
             let fn_label = format!("$fn {}", scad_code.fn_value);
-            if egui::ComboBox::from_id_salt("fn_select").selected_text(&fn_label).width(64.0).show_ui(ui, |ui| {
-                let mut changed = false;
-                for &v in &[8u32, 12, 16, 24, 32, 48, 64, 128] {
-                    if ui.selectable_value(&mut scad_code.fn_value, v, v.to_string()).changed() { changed = true; }
-                }
-                changed
-            }).inner.unwrap_or(false) { scad_code.dirty = true; }
+            egui::ComboBox::from_id_salt("fn_select")
+                .selected_text(&fn_label)
+                .width(64.0)
+                .show_ui(ui, |ui| {
+                    for &v in &[8u32, 12, 16, 24, 32, 48, 64, 96, 128, 256] {
+                        if ui.selectable_value(&mut scad_code.fn_value, v, v.to_string()).changed() {
+                            scad_code.dirty = true;
+                        }
+                    }
+                });
             if ui.button("🗑").clicked() {
                 scad_code.text.clear(); scad_code.dirty = true; compilation_state.should_zoom = true;
                 chat_state.session_start = chat_state.messages.len(); chat_state.history_index = None; chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle;

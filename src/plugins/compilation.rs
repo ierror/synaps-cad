@@ -181,6 +181,7 @@ fn compile_openscad(code: &str, fn_value: u32) -> CompilationResult {
     }
 
     let t0 = std::time::Instant::now();
+    eprintln!("[SynapsCAD] Compiling (fn={fn_value})...");
 
     // Catch panics from dependencies (e.g. spade triangulation)
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

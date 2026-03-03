@@ -19,21 +19,21 @@ $view = "all";
 
 // --- Snowman ---
 module view_snowman() {
-    color("white") sphere(r = 12, $fn = 32);
-    color("white") translate([0, 0, 16]) sphere(r = 9, $fn = 32);
-    color("white") translate([0, 0, 27]) sphere(r = 6, $fn = 32);
+    color("white") sphere(r = 12);
+    color("white") translate([0, 0, 16]) sphere(r = 9);
+    color("white") translate([0, 0, 27]) sphere(r = 6);
     color("orange")
         translate([0, 6, 27])
             rotate([90, 0, 0])
-                cylinder(h = 8, r1 = 1.5, r2 = 0, $fn = 12);
+                cylinder(h = 8, r1 = 1.5, r2 = 0);
 }
 
 // --- Rocket ---
 module view_rocket() {
-    color("silver") cylinder(h = 40, r = 8, $fn = 32);
+    color("silver") cylinder(h = 40, r = 8);
     color("red")
         translate([0, 0, 40])
-            cylinder(h = 15, r1 = 8, r2 = 0, $fn = 32);
+            cylinder(h = 15, r1 = 8, r2 = 0);
     color("darkgray")
         for (a = [0, 120, 240])
             rotate([0, 0, a])
@@ -51,8 +51,8 @@ module view_castle() {
         for (x = [-18, 18])
             for (y = [-18, 18])
                 translate([x, y, 0]) {
-                    cylinder(h = 28, r = 5, $fn = 24);
-                    color("red") translate([0, 0, 28]) cylinder(h = 12, r1 = 6, r2 = 0, $fn = 24);
+                    cylinder(h = 28, r = 5);
+                    color("red") translate([0, 0, 28]) cylinder(h = 12, r1 = 6, r2 = 0);
                 }
 }
 
