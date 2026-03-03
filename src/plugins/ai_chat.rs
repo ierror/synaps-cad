@@ -620,8 +620,12 @@ async fn run_ai_stream(
         ));
     }
 
+    // Claude's API requires temperature=1 when extended thinking is enabled.
+    let is_claude = model_name.contains("claude");
+    let effective_temperature = if extended_thinking && is_claude { 1.0 } else { temperature };
+
     let mut chat_options = ChatOptions::default()
-        .with_temperature(temperature)
+        .with_temperature(effective_temperature)
         .with_capture_content(true)
         .with_capture_reasoning_content(true);
 
