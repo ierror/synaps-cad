@@ -170,7 +170,7 @@ pub fn draw_part_labels(
         egui::Area::new(egui::Id::new(format!("part_label_{}", part_label.index)))
             .fixed_pos(egui::pos2(screen_pos.x + occupied.left - label_w / 2.0, screen_pos.y - label_h / 2.0))
             .interactable(false)
-            .order(egui::Order::Foreground)
+            .order(egui::Order::Background)
             .show(ctx, |ui| {
                 egui::Frame::new().fill(part_color).corner_radius(egui::CornerRadius::same(3))
                     .inner_margin(egui::Margin::symmetric(4, 2))
