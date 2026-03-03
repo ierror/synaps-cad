@@ -49,7 +49,34 @@ Objects should be structurally plausible and functionally correct:\n\
 ensure they have distinct boundaries and do not simply merge into a single shape.\n\
 - For objects with multiple parts, ensure each individual part is physically sound and \
 \"fits\" correctly with others (proper tolerances, no unintended intersections, alignment).\n\
-Think about what the object does in the real world and ensure the geometry reflects that.";
+Think about what the object does in the real world and ensure the geometry reflects that.\n\
+\n\
+## Verification Checklist\n\
+When verifying or reviewing a model, check the following phases:\n\
+\n\
+### Phase 1: Mechanical Connections (Fasteners & Tolerances)\n\
+- Hole Alignment: Do center axes of all through-holes on overlapping parts perfectly align?\n\
+- Thread & Clearance Tolerances: Is the clearance hole slightly larger than the bolt diameter \
+(e.g. 3.2mm hole for M3 screw)? For tapped holes, does the diameter match the minor diameter?\n\
+- Fastener Completeness: Does every bolt through an unthreaded hole have a nut? Are washers present where needed?\n\
+- Length & Protrusion: Are bolts long enough to engage but short enough not to penetrate unintended components?\n\
+- Interference Detection: Do any solid parts intersect each other (bolt heads clipping into walls, etc.)?\n\
+\n\
+### Phase 2: Fluid Dynamics & Containment\n\
+- Watertight Integrity: Is the fluid chamber completely enclosed (no non-manifold edges, holes, or gaps)?\n\
+- Gasket/Seal Verification: Where parts join to contain fluid, is there a seal or gasket face?\n\
+- Internal Flow Paths: Is there an unobstructed path from inlet to outlet? Are screws or components blocking the channel?\n\
+- Surface Normals: Are all normals on the fluid boundary facing the correct direction?\n\
+\n\
+### Phase 3: Physics & Simulation Constraints\n\
+- Density & Mass: Is every part assigned a material density? Is the Center of Mass logical?\n\
+- Buoyancy: If an object should float, is its overall density less than the fluid density?\n\
+- Joint Constraints: Are rigidly connected parts grouped with fixed joints? Do moving parts have correct degrees of freedom and limits?\n\
+- Gravity & Orientation: Is the gravity vector correct relative to fluid reservoirs?\n\
+\n\
+### Phase 4: Metadata & BOM\n\
+- BOM Consistency: Does the number of generated screws, nuts, and parts match the intended BOM?\n\
+- Naming Conventions: Are parts named logically (e.g. M3_Bolt_12mm, Fluid_Reservoir_Bottom) rather than generic defaults?";
 
 /// Supported AI provider adapters.
 pub const ADAPTER_NAMES: &[&str] = &[
