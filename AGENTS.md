@@ -119,9 +119,9 @@ if ($view == "assembly") view_assembly();
 ### Making Code Changes
 
 1. The compiler (`src/compiler/`) is the core — it evaluates OpenSCAD AST and produces meshes. Logic is split between `evaluator/`, `geometry/`, and `rendering/`.
-2. UI changes go in `src/plugins/ui.rs` (egui-based)
-3. New Bevy components/systems go in the appropriate plugin file
-4. Tests live in `src/compiler/evaluator/tests.rs` (unit tests) and `tests/openscad_examples/` (integration)
+2. UI changes go in `src/plugins/ui/` (egui-based). Logic is split between `layout.rs`, `chat.rs`, `editor.rs`, and `viewport.rs`.
+3. New Bevy components/systems go in the appropriate plugin file.
+4. Tests live in `src/compiler/evaluator/tests.rs` (unit tests) and `tests/openscad_examples/` (integration).
 
 ### Error Handling
 
