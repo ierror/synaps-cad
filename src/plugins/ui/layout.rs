@@ -229,84 +229,103 @@ fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker:
 }
 
 fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_height: f32, view_textures: &[(String, egui::TextureHandle)], preview_state: &mut ImagePreviewState) {
-    egui::ScrollArea::vertical().id_salt("chat_scroll").max_height(chat_height).stick_to_bottom(true).show(ui, |ui| {
-        let visible_messages = &chat_state.messages[chat_state.session_start..];
-        let msg_count = visible_messages.len();
-        let mut img_to_remove: Option<(usize, usize)> = None;
-        for (i, msg) in visible_messages.iter().enumerate() {
-            let msg_idx = chat_state.session_start + i;
-            let is_last = i == msg_count - 1;
-            let is_user = msg.role == "user";
-            let (prefix, color, header_bg) = if is_user { ("You", egui::Color32::from_rgb(140, 180, 255), egui::Color32::from_rgb(50, 70, 120)) }
-                else if msg.is_error { ("⚠", egui::Color32::from_rgb(255, 140, 140), egui::Color32::from_rgb(120, 50, 50)) }
-                else { ("AI", egui::Color32::from_rgb(160, 255, 160), egui::Color32::from_rgb(45, 80, 45)) };
-
-            let header_text = if is_user { let preview: String = msg.content.chars().take(80).collect(); format!("{prefix}: {preview}{}", if msg.content.len() > 80 { "…" } else { "" }) } else { format!("{prefix}:") };
-            let id = ui.make_persistent_id(format!("chat_msg_{msg_idx}"));
-            let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, if chat_state.is_streaming { is_last } else { is_last || !is_user || msg.is_error });
-            if msg.is_error { state.set_open(true); }
-            state.show_header(ui, |ui| {
-                let w = ui.available_width();
-                egui::Frame::new().fill(header_bg).corner_radius(egui::CornerRadius::same(3)).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
-                    ui.set_width(w); ui.label(egui::RichText::new(&header_text).strong().color(color));
-                });
-            }).body(|ui| {
-                if let Some(ref thinking) = msg.thinking {
-                    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id.with("thinking"), true).show_header(ui, |ui| {
-                        ui.label(egui::RichText::new("💭 Thinking…").italics().color(egui::Color32::from_rgb(180, 180, 180)));
-                    }).body(|ui| { crate::plugins::ui::chat::render_thinking_content(ui, thinking); });
-                }
-                if !is_user || msg.content.chars().count() > 80 { render_chat_content(ui, &msg.content, msg.is_error); }
-                if !msg.images.is_empty() {
-                    ui.horizontal_wrapped(|ui| {
-                        for (img_i, img) in msg.images.iter().enumerate() {
-                            let frame = egui::Frame::new().fill(egui::Color32::from_rgb(40, 40, 58)).corner_radius(egui::CornerRadius::same(3)).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    let label = ui.add(egui::Label::new(egui::RichText::new("📷").small().color(egui::Color32::from_rgb(160, 160, 180))).sense(egui::Sense::click()));
-                                    if is_user && ui.small_button("x").clicked() { img_to_remove = Some((msg_idx, img_i)); }
-                                    label
-                                })
-                            });
-                            if frame.inner.inner.hovered() { show_image_preview(ui, img, preview_state); }
-                            if frame.inner.inner.clicked() { copy_chat_image_to_clipboard(img); }
-                        }
-                    });
-                }
-            });
-            ui.add_space(2.0);
-        }
-        if let Some((m_idx, i_idx)) = img_to_remove { chat_state.messages[m_idx].images.remove(i_idx); }
-
+    ui.allocate_ui(egui::vec2(ui.available_width(), chat_height), |ui| {
         let verifying = match &chat_state.verification {
             crate::plugins::ai_chat::VerificationState::WaitingForCompilation => { ui.horizontal(|ui| { ui.spinner(); ui.label(egui::RichText::new("Compiling... will verify result").small().italics().color(egui::Color32::from_rgb(140, 140, 160))); }); true }
             crate::plugins::ai_chat::VerificationState::Verifying(round) => { ui.horizontal(|ui| { ui.spinner(); ui.label(egui::RichText::new(format!("Verifying (round {round})...")).small().italics().color(egui::Color32::from_rgb(100, 160, 255))); }); true }
             _ => false,
         };
+
+        // Render AI status bar at the bottom if streaming
+        let mut status_height = 0.0;
         if chat_state.is_streaming && !verifying {
+            let no_resp = !chat_state.messages.last().is_some_and(|m| m.role == "assistant" && !m.content.is_empty());
+            status_height = if no_resp && !view_textures.is_empty() { 64.0 } else { 24.0 };
+        }
+
+        let scroll_height = (chat_height - status_height - ui.spacing().item_spacing.y).max(20.0);
+
+        egui::ScrollArea::vertical().id_salt("chat_scroll").max_height(scroll_height).stick_to_bottom(true).show(ui, |ui| {
+            let visible_messages = &chat_state.messages[chat_state.session_start..];
+            let msg_count = visible_messages.len();
+            let mut img_to_remove: Option<(usize, usize)> = None;
+            for (i, msg) in visible_messages.iter().enumerate() {
+                let msg_idx = chat_state.session_start + i;
+                let is_last = i == msg_count - 1;
+                let is_user = msg.role == "user";
+                let (prefix, color, header_bg) = if is_user { ("You", egui::Color32::from_rgb(140, 180, 255), egui::Color32::from_rgb(50, 70, 120)) }
+                    else if msg.is_error { ("⚠", egui::Color32::from_rgb(255, 140, 140), egui::Color32::from_rgb(120, 50, 50)) }
+                    else { ("AI", egui::Color32::from_rgb(160, 255, 160), egui::Color32::from_rgb(45, 80, 45)) };
+
+                let header_text = if is_user { let preview: String = msg.content.chars().take(80).collect(); format!("{prefix}: {preview}{}", if msg.content.len() > 80 { "…" } else { "" }) } else { format!("{prefix}:") };
+                let id = ui.make_persistent_id(format!("chat_msg_{msg_idx}"));
+                let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, if chat_state.is_streaming { is_last } else { is_last || !is_user || msg.is_error });
+                if msg.is_error { state.set_open(true); }
+                state.show_header(ui, |ui| {
+                    let w = ui.available_width();
+                    egui::Frame::new().fill(header_bg).corner_radius(egui::CornerRadius::same(3)).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
+                        ui.set_width(w); ui.label(egui::RichText::new(&header_text).strong().color(color));
+                    });
+                }).body(|ui| {
+                    if let Some(ref thinking) = msg.thinking {
+                        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id.with("thinking"), true).show_header(ui, |ui| {
+                            ui.label(egui::RichText::new("💭 Thinking…").italics().color(egui::Color32::from_rgb(180, 180, 180)));
+                        }).body(|ui| { crate::plugins::ui::chat::render_thinking_content(ui, thinking); });
+                    }
+                    if !is_user || msg.content.chars().count() > 80 { render_chat_content(ui, &msg.content, msg.is_error); }
+                    if !msg.images.is_empty() {
+                        ui.horizontal_wrapped(|ui| {
+                            for (img_i, img) in msg.images.iter().enumerate() {
+                                let frame = egui::Frame::new().fill(egui::Color32::from_rgb(40, 40, 58)).corner_radius(egui::CornerRadius::same(3)).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        let label = ui.add(egui::Label::new(egui::RichText::new("📷").small().color(egui::Color32::from_rgb(160, 160, 180))).sense(egui::Sense::click()));
+                                        if is_user && ui.small_button("x").clicked() { img_to_remove = Some((msg_idx, img_i)); }
+                                        label
+                                    })
+                                });
+                                if frame.inner.inner.hovered() { show_image_preview(ui, img, preview_state); }
+                                if frame.inner.inner.clicked() { copy_chat_image_to_clipboard(img); }
+                            }
+                        });
+                    }
+                });
+                ui.add_space(2.0);
+            }
+            if let Some((m_idx, i_idx)) = img_to_remove { chat_state.messages[m_idx].images.remove(i_idx); }
+        });
+
+        if chat_state.is_streaming && !verifying {
+            // Push to bottom if ScrollArea didn't consume all space
+            let remaining = ui.available_height() - status_height;
+            if remaining > 0.0 {
+                ui.add_space(remaining);
+            }
+
             let elapsed_text = chat_state.streaming_start.map(|t| {
-                format!("{:.1}s", t.elapsed().as_secs_f32())
+                let s = t.elapsed().as_secs();
+                let m = s / 60;
+                let s = s % 60;
+                format!("{m:02}:{s:02}")
             });
             let no_resp = !chat_state.messages.last().is_some_and(|m| m.role == "assistant" && !m.content.is_empty());
             if no_resp && !view_textures.is_empty() {
                 let view_idx = (ui.input(|i| i.time) / 1.5) as usize % view_textures.len();
                 let (label, texture) = &view_textures[view_idx];
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.image(egui::load::SizedTexture::new(texture.id(), egui::vec2(43.0, 43.0)));
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    if let Some(ref elapsed) = elapsed_text {
+                        ui.label(egui::RichText::new(elapsed).monospace().color(egui::Color32::from_rgb(200, 200, 210)));
+                    }
+                    ui.image(egui::load::SizedTexture::new(texture.id(), egui::vec2(58.0, 58.0)));
                     ui.label(egui::RichText::new(format!("📷 {label}")).small().color(egui::Color32::from_rgb(140, 140, 160)));
-                    if let Some(ref elapsed) = elapsed_text {
-                        ui.label(egui::RichText::new(elapsed).small().color(egui::Color32::from_rgb(120, 120, 140)));
-                    }
                 });
-                ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+                ui.ctx().request_repaint();
             } else {
-                ui.horizontal(|ui| {
-                    ui.spinner();
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     if let Some(ref elapsed) = elapsed_text {
-                        ui.label(egui::RichText::new(elapsed).small().color(egui::Color32::from_rgb(120, 120, 140)));
+                        ui.label(egui::RichText::new(elapsed).monospace().color(egui::Color32::from_rgb(200, 200, 210)));
                     }
                 });
-                ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+                ui.ctx().request_repaint();
             }
         }
     });
