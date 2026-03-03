@@ -256,6 +256,7 @@ impl Default for ChatState {
             pending_images: Vec::new(),
             verification: VerificationState::Idle,
             session_start: 0,
+            streaming_start: None,
         }
     }
 }
@@ -730,6 +731,7 @@ fn ai_receive_system(
                     if chunks.is_empty() {
                         drop(rx);
                         chat_state.is_streaming = false;
+                        chat_state.streaming_start = None;
                         chat_state.stream_receiver = None;
                         return;
                     }
@@ -797,6 +799,7 @@ fn ai_receive_system(
                     last.thinking = reasoning;
                 }
                 chat_state.is_streaming = false;
+                chat_state.streaming_start = None;
                 chat_state.stream_receiver = None;
 
                 let code_changed = match extract_code_change(&content) {
@@ -871,6 +874,7 @@ fn ai_receive_system(
                     is_error: true,
                 });
                 chat_state.is_streaming = false;
+                chat_state.streaming_start = None;
                 chat_state.stream_receiver = None;
                 chat_state.verification = VerificationState::Idle;
                 return;
@@ -922,6 +926,7 @@ fn ai_verify_system(
 
             // Trigger the AI send
             chat_state.is_streaming = true;
+            chat_state.streaming_start = Some(std::time::Instant::now());
             chat_state.verification = VerificationState::Verifying(round);
         }
         _ => {}

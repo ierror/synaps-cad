@@ -255,25 +255,6 @@ fn compile_to_merged_mesh(code: &str) -> MeshData {
     }
 }
 
-fn analyze_csg_mesh(mesh: &CsgMesh<()>) -> (usize, usize, usize, usize) {
-    let total_polys = mesh.polygons.len();
-    let triangles = mesh
-        .polygons
-        .iter()
-        .filter(|p| p.vertices.len() == 3)
-        .count();
-    let quads = mesh
-        .polygons
-        .iter()
-        .filter(|p| p.vertices.len() == 4)
-        .count();
-    let large = mesh
-        .polygons
-        .iter()
-        .filter(|p| p.vertices.len() > 4)
-        .count();
-    (total_polys, triangles, quads, large)
-}
 
 #[test]
 fn test_scalar_vector_mul() {
@@ -638,6 +619,19 @@ fn assert_example_matches_reference(relative: &str) {
         assert!((our_min[i] - ref_min[i]).abs() <= tol);
         assert!((our_max[i] - ref_max[i]).abs() <= tol);
     }
+    // Simple facet count comparison (allow some tolerance if needed, but currently strict)
+    let facet_diff = if our_triangles > reference.facets {
+        our_triangles - reference.facets
+    } else {
+        reference.facets - our_triangles
+    };
+    // Let's allow 5% difference in facet counts for now due to different triangulation algorithms
+    let facet_tol = (reference.facets as f64 * 0.05) as usize;
+    assert!(
+        facet_diff <= facet_tol,
+        "{relative}: facet count mismatch: ours {our_triangles}, ref {}",
+        reference.facets
+    );
 }
 
 #[test]

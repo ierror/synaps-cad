@@ -170,7 +170,7 @@ fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker:
             let resp = ui.add(egui::TextEdit::multiline(&mut chat_state.input_buffer).hint_text("Ask the AI assistant...").desired_width(ui.available_width() - 68.0).desired_rows(3).lock_focus(true));
             ui.vertical(|ui| {
                 if chat_state.is_streaming {
-                    if ui.button("⏹").clicked() { chat_state.is_streaming = false; chat_state.stream_receiver = None; chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle; }
+                    if ui.button("⏹").clicked() { chat_state.is_streaming = false; chat_state.streaming_start = None; chat_state.stream_receiver = None; chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle; }
                 } else {
                     send_clicked = ui.button("⬆").clicked();
                     enter_pressed = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.shift);
@@ -223,7 +223,7 @@ fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker:
             chat_state.input_history.push((user_msg.clone(), images.clone()));
             chat_state.history_index = None; chat_state.history_draft = None;
             chat_state.messages.push(crate::plugins::ai_chat::ChatMessage { role: "user".into(), content: user_msg, thinking: None, images, auto_generated: false, is_error: false });
-            chat_state.input_buffer.clear(); chat_state.is_streaming = true;
+            chat_state.input_buffer.clear(); chat_state.is_streaming = true; chat_state.streaming_start = Some(std::time::Instant::now());
         }
     });
 }
@@ -283,6 +283,10 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
             _ => false,
         };
         if chat_state.is_streaming && !verifying {
+            let elapsed_text = chat_state.streaming_start.map(|t| {
+                let secs = t.elapsed().as_secs_f32();
+                format!("{secs:.1}s")
+            });
             let no_resp = !chat_state.messages.last().is_some_and(|m| m.role == "assistant" && !m.content.is_empty());
             if no_resp && !view_textures.is_empty() {
                 let view_idx = (ui.input(|i| i.time) / 1.5) as usize % view_textures.len();
@@ -291,9 +295,20 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
                     ui.spinner();
                     ui.image(egui::load::SizedTexture::new(texture.id(), egui::vec2(43.0, 43.0)));
                     ui.label(egui::RichText::new(format!("📷 {label}")).small().color(egui::Color32::from_rgb(140, 140, 160)));
+                    if let Some(ref elapsed) = elapsed_text {
+                        ui.label(egui::RichText::new(elapsed).small().color(egui::Color32::from_rgb(120, 120, 140)));
+                    }
                 });
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
-            } else { ui.spinner(); }
+            } else {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    if let Some(ref elapsed) = elapsed_text {
+                        ui.label(egui::RichText::new(elapsed).small().color(egui::Color32::from_rgb(120, 120, 140)));
+                    }
+                });
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+            }
         }
     });
 }

@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::render::mesh::PrimitiveTopology;
+use bevy::render::mesh::{MeshAabb, PrimitiveTopology};
 
 pub struct ScenePlugin;
 
@@ -203,9 +203,8 @@ fn update_grid_system(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut current_size: ResMut<CurrentGridSize>,
-    gizmo_vis: Res<GizmoVisibility>,
+    _gizmo_vis: Res<GizmoVisibility>,
     model_q: Query<(&Mesh3d, &GlobalTransform), With<CadModel>>,
-    mesh_assets: Res<Assets<Mesh>>,
     grid_q: Query<Entity, With<GridEntity>>,
     axis_q: Query<Entity, With<AxisLineEntity>>,
 ) {
@@ -215,7 +214,7 @@ fn update_grid_system(
     let mut found = false;
 
     for (mesh3d, global_tf) in &model_q {
-        let Some(mesh) = mesh_assets.get(&mesh3d.0) else { continue };
+        let Some(mesh) = meshes.get(&mesh3d.0) else { continue };
         let Some(aabb) = mesh.compute_aabb() else { continue };
         let local_min = Vec3::from(aabb.center) - Vec3::from(aabb.half_extents);
         let local_max = Vec3::from(aabb.center) + Vec3::from(aabb.half_extents);
