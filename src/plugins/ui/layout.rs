@@ -275,11 +275,9 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
             if no_resp && !view_textures.is_empty() {
                 let view_idx = (ui.input(|i| i.time) / 1.5) as usize % view_textures.len();
                 let (label, texture) = &view_textures[view_idx];
-                ui.vertical_centered(|ui| {
-                    egui::Frame::new().stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 100))).corner_radius(egui::CornerRadius::same(4)).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
-                        let img_resp = ui.image(egui::load::SizedTexture::new(texture.id(), egui::vec2(180.0, 180.0)));
-                        ui.put(egui::Rect::from_center_size(img_resp.rect.center(), egui::vec2(24.0, 24.0)), egui::Spinner::new());
-                    });
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.image(egui::load::SizedTexture::new(texture.id(), egui::vec2(32.0, 32.0)));
                     ui.label(egui::RichText::new(format!("📷 {label}")).small().color(egui::Color32::from_rgb(140, 140, 160)));
                 });
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
