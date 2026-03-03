@@ -107,7 +107,7 @@ fn render_ai_assistant_header(ui: &mut egui::Ui, chat_state: &mut ChatState, ai_
             if ui.button(if available_models.needs_configuration { "⚙ ⚠" } else { "⚙" }).clicked() { settings_open.0 = !settings_open.0; }
             if ui.button("🗑").clicked() {
                 chat_state.session_start = chat_state.messages.len();
-                chat_state.input_history.clear(); chat_state.history_index = None; chat_state.pending_images.clear();
+                chat_state.history_index = None; chat_state.pending_images.clear();
             }
 
             let selected_label = if ai_config.max_verification_rounds == u32::MAX { "∞".into() } else { ai_config.max_verification_rounds.to_string() };
@@ -295,7 +295,7 @@ fn render_code_header(ui: &mut egui::Ui, scad_code: &mut ScadCode, chat_state: &
             if ui.add_enabled(!compilation_state.is_compiling, egui::Button::new(if compilation_state.is_compiling { "Compiling..." } else { "Compile" })).clicked() { scad_code.dirty = true; }
             if ui.button("🗑").clicked() {
                 scad_code.text.clear(); scad_code.dirty = true; compilation_state.should_zoom = true;
-                chat_state.session_start = chat_state.messages.len(); chat_state.input_history.clear(); chat_state.history_index = None; chat_state.pending_images.clear(); chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle;
+                chat_state.session_start = chat_state.messages.len(); chat_state.history_index = None; chat_state.pending_images.clear(); chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle;
             }
             if export_state.receiver.is_some() { ui.spinner(); } else {
                 let has_parts = !last_parts.parts.is_empty();
