@@ -957,11 +957,11 @@ fn ui_layout_system(
                     let msg_idx = chat_state.session_start + msg_count - 1 - rev_i;
                     let is_user = msg.role == "user";
                     let (prefix, color, header_bg) = if is_user {
-                        ("You", egui::Color32::from_rgb(100, 160, 255), egui::Color32::from_rgb(40, 50, 80))
+                        ("You", egui::Color32::from_rgb(140, 180, 255), egui::Color32::from_rgb(50, 70, 120))
                     } else if msg.is_error {
-                        ("⚠", egui::Color32::from_rgb(255, 100, 100), egui::Color32::from_rgb(80, 40, 40))
+                        ("⚠", egui::Color32::from_rgb(255, 140, 140), egui::Color32::from_rgb(120, 50, 50))
                     } else {
-                        ("AI", egui::Color32::from_rgb(130, 220, 130), egui::Color32::from_rgb(40, 60, 40))
+                        ("AI", egui::Color32::from_rgb(160, 255, 160), egui::Color32::from_rgb(45, 80, 45))
                     };
 
                     // Build header text: for user messages show truncated preview
@@ -992,12 +992,13 @@ fn ui_layout_system(
                     }
                     state
                         .show_header(ui, |ui| {
+                            let available_width = ui.available_width();
                             egui::Frame::new()
                                 .fill(header_bg)
                                 .corner_radius(egui::CornerRadius::same(3))
                                 .inner_margin(egui::Margin::symmetric(4, 2))
                                 .show(ui, |ui| {
-                                    ui.set_width(ui.available_width());
+                                    ui.set_width(available_width);
                                     ui.label(egui::RichText::new(&header_text).strong().color(color));
                                 });
                         })
@@ -1058,6 +1059,23 @@ fn ui_layout_system(
                             }
                         });
                     ui.add_space(2.0);
+                }
+
+                if chat_state.is_streaming {
+                    // Check if the latest message is from the user (meaning AI hasn't started responding yet)
+                    if let Some(last_msg) = visible_messages.last() {
+                         if last_msg.role == "user" {
+                             let resp = ui.horizontal(|ui| {
+                                 ui.spinner();
+                                 ui.label(
+                                     egui::RichText::new("Thinking...")
+                                         .italics()
+                                         .color(egui::Color32::from_rgb(150, 150, 150)),
+                                 );
+                             });
+                             resp.response.scroll_to_me(Some(egui::Align::BOTTOM));
+                         }
+                    }
                 }
             });
 
@@ -1380,7 +1398,6 @@ fn ui_layout_system(
 fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> egui::Response {
     let code_bg = egui::Color32::from_rgb(30, 30, 46);
     let code_color = egui::Color32::from_rgb(220, 220, 170);
-    let error_color = egui::Color32::from_rgb(255, 120, 120);
     let lang_color = egui::Color32::from_rgb(100, 100, 130);
     let use_highlighting = |lang: &str| -> bool {
         matches!(lang.to_lowercase().as_str(), "synapscad" | "openscad" | "scad")
@@ -1394,11 +1411,7 @@ fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> egui
             // Render text before the code fence
             let before = &remaining[..fence_start];
             if !before.is_empty() {
-                if is_error {
-                    ui.label(egui::RichText::new(before.trim_end()).color(error_color));
-                } else {
-                    ui.label(before.trim_end());
-                }
+                render_markdown_text(ui, before, is_error);
             }
 
             let after_fence = &remaining[fence_start + 3..];
@@ -1478,19 +1491,43 @@ fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> egui
                 remaining = "";
             }
         } else {
-            // No more code fences — render remaining as plain text
-            let r = if is_error {
-                ui.label(egui::RichText::new(remaining.trim_end()).color(error_color))
-            } else {
-                ui.label(remaining.trim_end())
-            };
-            last_resp = Some(r);
+            // No more code fences — render remaining as markdown-like text
+            render_markdown_text(ui, remaining, is_error);
             remaining = "";
         }
     }
 
     // Fallback if content was empty
     last_resp.unwrap_or_else(|| ui.label(""))
+}
+
+/// Helper to render markdown-like text with bold header colorization.
+fn render_markdown_text(ui: &mut egui::Ui, text: &str, is_error: bool) {
+    let error_color = egui::Color32::from_rgb(255, 120, 120);
+    let header_bg = egui::Color32::from_rgb(60, 60, 80);
+
+    for line in text.split('\n') {
+        let trimmed = line.trim();
+        if trimmed.starts_with("**") && trimmed.ends_with("**") {
+            let header_text = trimmed.trim_matches('*');
+            egui::Frame::new()
+                .fill(header_bg)
+                .corner_radius(egui::CornerRadius::same(3))
+                .inner_margin(egui::Margin::symmetric(6, 2))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.label(egui::RichText::new(header_text).strong().color(egui::Color32::WHITE));
+                });
+        } else if !line.is_empty() {
+            if is_error {
+                ui.label(egui::RichText::new(line).color(error_color));
+            } else {
+                ui.label(line);
+            }
+        } else {
+            ui.add_space(4.0);
+        }
+    }
 }
 
 fn poll_file_picker_system(
