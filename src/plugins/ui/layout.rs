@@ -284,8 +284,7 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
         };
         if chat_state.is_streaming && !verifying {
             let elapsed_text = chat_state.streaming_start.map(|t| {
-                let secs = t.elapsed().as_secs_f32();
-                format!("{secs:.1}s")
+                format!("{:.1}s", t.elapsed().as_secs_f32())
             });
             let no_resp = !chat_state.messages.last().is_some_and(|m| m.role == "assistant" && !m.content.is_empty());
             if no_resp && !view_textures.is_empty() {
@@ -299,7 +298,7 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
                         ui.label(egui::RichText::new(elapsed).small().color(egui::Color32::from_rgb(120, 120, 140)));
                     }
                 });
-                ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
             } else {
                 ui.horizontal(|ui| {
                     ui.spinner();
@@ -307,7 +306,7 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
                         ui.label(egui::RichText::new(elapsed).small().color(egui::Color32::from_rgb(120, 120, 140)));
                     }
                 });
-                ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
             }
         }
     });
