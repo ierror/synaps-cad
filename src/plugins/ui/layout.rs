@@ -266,12 +266,12 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
         }
         if let Some((m_idx, i_idx)) = img_to_remove { chat_state.messages[m_idx].images.remove(i_idx); }
 
-        match &chat_state.verification {
-            crate::plugins::ai_chat::VerificationState::WaitingForCompilation => { ui.horizontal(|ui| { ui.spinner(); ui.label(egui::RichText::new("Compiling... will verify result").small().italics().color(egui::Color32::from_rgb(140, 140, 160))); }); }
-            crate::plugins::ai_chat::VerificationState::Verifying(round) => { ui.horizontal(|ui| { ui.spinner(); ui.label(egui::RichText::new(format!("Verifying (round {round})...")).small().italics().color(egui::Color32::from_rgb(100, 160, 255))); }); }
-            _ => {}
-        }
-        if chat_state.is_streaming {
+        let verifying = match &chat_state.verification {
+            crate::plugins::ai_chat::VerificationState::WaitingForCompilation => { ui.horizontal(|ui| { ui.spinner(); ui.label(egui::RichText::new("Compiling... will verify result").small().italics().color(egui::Color32::from_rgb(140, 140, 160))); }); true }
+            crate::plugins::ai_chat::VerificationState::Verifying(round) => { ui.horizontal(|ui| { ui.spinner(); ui.label(egui::RichText::new(format!("Verifying (round {round})...")).small().italics().color(egui::Color32::from_rgb(100, 160, 255))); }); true }
+            _ => false,
+        };
+        if chat_state.is_streaming && !verifying {
             let no_resp = !chat_state.messages.last().is_some_and(|m| m.role == "assistant" && !m.content.is_empty());
             if no_resp && !view_textures.is_empty() {
                 let view_idx = (ui.input(|i| i.time) / 1.5) as usize % view_textures.len();
@@ -294,7 +294,7 @@ fn render_code_header(ui: &mut egui::Ui, scad_code: &mut ScadCode, chat_state: &
             if ui.add_enabled(!compilation_state.is_compiling, egui::Button::new(if compilation_state.is_compiling { "Compiling..." } else { "Compile" })).clicked() { scad_code.dirty = true; }
             if ui.button("🗑").clicked() {
                 scad_code.text.clear(); scad_code.dirty = true; compilation_state.should_zoom = true;
-                chat_state.session_start = chat_state.messages.len(); chat_state.history_index = None; chat_state.pending_images.clear(); chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle;
+                chat_state.session_start = chat_state.messages.len(); chat_state.history_index = None; chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle;
             }
             if export_state.receiver.is_some() { ui.spinner(); } else {
                 let has_parts = !last_parts.parts.is_empty();
