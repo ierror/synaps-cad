@@ -210,8 +210,6 @@ pub struct ChatState {
     /// Index into `messages` where the current session starts.
     /// Messages before this index are displayed but not sent to the AI.
     pub session_start: usize,
-    /// Whether the chat should auto-scroll to the bottom.
-    pub stick_to_bottom: bool,
 }
 
 impl Default for ChatState {
@@ -226,7 +224,6 @@ impl Default for ChatState {
             pending_images: Vec::new(),
             verification: VerificationState::Idle,
             session_start: 0,
-            stick_to_bottom: true,
         }
     }
 }
