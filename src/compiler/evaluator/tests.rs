@@ -23,7 +23,7 @@ difference() {
         star(points = 5, outer_r = 5, inner_r = 2, h = 2);
 }
 "#;
-    let result = compile_scad_code(code);
+    let result = compile_scad_code(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             eprintln!("Parts: {}", parts.len());
@@ -54,7 +54,7 @@ linear_extrude(height = 2)
         [r * cos(a), r * sin(a)]
     ]);
 "#;
-    let result = compile_scad_code(code);
+    let result = compile_scad_code(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             eprintln!("Star standalone - Parts: {}", parts.len());
@@ -78,7 +78,7 @@ fn test_text_basic() {
 linear_extrude(height = 5)
     text("Hello", size = 20);
 "#;
-    let result = compile_scad_code(code);
+    let result = compile_scad_code(code, 0);
     match result {
         CompilationResult::Success { parts, warnings, .. } => {
             assert!(!parts.is_empty(), "text() should produce geometry");
@@ -101,7 +101,7 @@ fn test_text_center_aligned() {
 linear_extrude(height = 2)
     text("A", size = 30, halign = "center", valign = "center");
 "#;
-    let result = compile_scad_code(code);
+    let result = compile_scad_code(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty(), "Centered text should produce geometry");
@@ -119,7 +119,7 @@ fn test_text_with_font_style() {
 linear_extrude(height = 3)
     text("B", size = 20, font = "Liberation Sans:style=Bold");
 "#;
-    let result = compile_scad_code(code);
+    let result = compile_scad_code(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty(), "Bold text should produce geometry");
@@ -138,7 +138,7 @@ difference() {
             text("Hi", size = 15, halign = "center", valign = "center");
 }
 "#;
-    let result = compile_scad_code(code);
+    let result = compile_scad_code(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty(), "Text engraving should produce geometry");
@@ -155,7 +155,7 @@ difference() {
 #[test]
 fn test_text_2d_only() {
     let code = r#"text("X", size = 10);"#;
-    let result = compile_scad_code(code);
+    let result = compile_scad_code(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty(), "2D text should render as thin geometry");
@@ -175,7 +175,7 @@ translate([20,0,0])
 translate([0,10,0])
     text( "Right to left" ,size=5, direction="rtl");
 "#;
-    let result = compile_scad_code(code);
+    let result = compile_scad_code(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             assert_eq!(parts.len(), 4, "Should produce 4 text parts");
@@ -196,7 +196,7 @@ fn test_axis_angle_rotate() {
 rotate(a = 45, v = [1, 0, 0])
     cube([10, 10, 10]);
 "#;
-    let result = compile_scad_code(code);
+    let result = compile_scad_code(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty(), "Should produce geometry");
@@ -233,7 +233,7 @@ fn csg_mesh_to_mesh_data_local(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
 }
 
 fn compile_to_merged_mesh(code: &str) -> MeshData {
-    match compile_scad_code(code) {
+    match compile_scad_code(code, 0) {
         CompilationResult::Success { parts, .. } => {
             let mut positions = Vec::new();
             let mut normals = Vec::new();
@@ -298,7 +298,7 @@ module ring(radius, count){
 }
 ring(20, 4) { cube(3); }
 "#;
-    let result = compile_scad_code(code);
+    let result = compile_scad_code(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             let total_verts: usize = parts.iter().map(|p| p.positions.len()).sum();
@@ -363,7 +363,7 @@ module make_ring_of(radius, count){
     }
 }
 "#;
-    let result = compile_scad_code(code);
+    let result = compile_scad_code(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             let total_verts: usize = parts.iter().map(|p| p.positions.len()).sum();
@@ -577,7 +577,7 @@ fn example_path(relative: &str) -> String {
 fn assert_example_compiles(relative: &str) {
     let path = example_path(relative);
     let code = std::fs::read_to_string(&path).unwrap();
-    match compile_scad_code(&code) {
+    match compile_scad_code(&code, 0) {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty());
         }
@@ -588,7 +588,7 @@ fn assert_example_compiles(relative: &str) {
 fn assert_example_no_panic(relative: &str) {
     let path = example_path(relative);
     let code = std::fs::read_to_string(&path).unwrap();
-    let _ = std::panic::catch_unwind(|| compile_scad_code(&code));
+    let _ = std::panic::catch_unwind(|| compile_scad_code(&code, 0));
 }
 
 #[derive(serde::Deserialize)]
@@ -606,7 +606,7 @@ struct BBox {
 fn assert_example_matches_reference(relative: &str) {
     let path = example_path(relative);
     let code = std::fs::read_to_string(&path).unwrap();
-    let parts = match compile_scad_code(&code) {
+    let parts = match compile_scad_code(&code, 0) {
         CompilationResult::Success { parts, .. } => parts,
         CompilationResult::Error(e) => panic!("{relative}: compilation failed: {e}"),
     };
@@ -757,7 +757,7 @@ fn dodecahedron_scad() -> &'static str {
 #[test]
 fn test_polyhedron_pentagon_faces_standalone() {
     let code = format!("{} polyhedron(points=points, faces=faces);", dodecahedron_scad());
-    match compile_scad_code(&code) {
+    match compile_scad_code(&code, 0) {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty());
             let total_tris: usize = parts.iter().map(|p| p.positions.len() / 3).sum();
@@ -770,7 +770,7 @@ fn test_polyhedron_pentagon_faces_standalone() {
 #[test]
 fn test_cone_zero_r1() {
     let code = "cylinder(h=5, r1=0, r2=10, $fn=12);";
-    match compile_scad_code(code) {
+    match compile_scad_code(code, 0) {
         CompilationResult::Success { parts, .. } => { assert!(!parts.is_empty()); }
         CompilationResult::Error(e) => panic!("compilation failed: {e}"),
     }
@@ -783,11 +783,80 @@ color("red") cube(10);
 color("green") translate([20, 0, 0]) sphere(5, $fn=12);
 color([0.2, 0.4, 0.8]) translate([40, 0, 0]) cylinder(h=10, r=5, $fn=12);
 "#;
-    match compile_scad_code(code) {
+    match compile_scad_code(code, 0) {
         CompilationResult::Success { parts, .. } => {
             assert_eq!(parts.len(), 3);
             assert_eq!(parts[0].color, Some([1.0, 0.0, 0.0]));
         }
         CompilationResult::Error(e) => panic!("Color test failed: {e}"),
+    }
+}
+
+#[test]
+fn test_faceted_pot_polyhedron() {
+    let code = r##"
+$view = "main";
+
+module faceted_pot(r_bot, r_mid, r_top, h_mid, h_top) {
+    points = concat(
+        [[0,0,0], [0,0,h_top]],
+        [for (i=[0:5]) [r_bot * cos(i*60), r_bot * sin(i*60), 0]],
+        [for (i=[0:5]) [r_mid * cos(i*60 + 30), r_mid * sin(i*60 + 30), h_mid]],
+        [for (i=[0:5]) [r_top * cos(i*60), r_top * sin(i*60), h_top]]
+    );
+    faces = concat(
+        [for (i=[0:5]) [0, 2+i, 2+(i+1)%6]],
+        [for (i=[0:5]) [2+i, 8+i, 2+(i+1)%6]],
+        [for (i=[0:5]) [8+i, 8+(i+1)%6, 2+(i+1)%6]],
+        [for (i=[0:5]) [8+i, 14+(i+1)%6, 8+(i+1)%6]],
+        [for (i=[0:5]) [14+i, 14+(i+1)%6, 8+i]],
+        [for (i=[0:5]) [1, 14+(i+1)%6, 14+i]]
+    );
+    polyhedron(points=points, faces=faces);
+}
+
+module planter() {
+    difference() {
+        faceted_pot(r_bot=35, r_mid=65, r_top=50, h_mid=40, h_top=80);
+        translate([0, 0, 4])
+        union() {
+            faceted_pot(r_bot=31, r_mid=61, r_top=46, h_mid=36, h_top=77);
+            translate([0, 0, 75]) cylinder(r=46, h=10, $fn=6);
+        }
+        for (i=[0:2]) {
+            rotate([0, 0, i*120])
+            translate([15, 0, -1])
+            cylinder(r=3, h=10, $fn=20);
+        }
+    }
+}
+
+module drip_tray() {
+    union() {
+        difference() {
+            cylinder(r1=44, r2=53, h=15, $fn=6);
+            translate([0, 0, 3]) cylinder(r1=40, r2=49, h=13, $fn=6);
+        }
+        for (i=[0:2]) {
+            rotate([0, 0, i*120 + 30])
+            translate([25, 0, 3])
+            scale([2, 0.5, 0.5])
+            sphere(r=4, $fn=20);
+        }
+    }
+}
+
+module view_main() {
+    translate([-60, 0, 0]) color("#E2E8F0") planter();
+    translate([60, 0, 0]) color("#475569") drip_tray();
+}
+
+if ($view == "main") { view_main(); }
+"##;
+    match compile_scad_code(code, 0) {
+        CompilationResult::Success { parts, .. } => {
+            assert!(!parts.is_empty(), "Expected at least one part");
+        }
+        CompilationResult::Error(e) => panic!("Faceted pot compilation failed: {e}"),
     }
 }

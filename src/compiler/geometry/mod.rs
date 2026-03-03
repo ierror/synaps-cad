@@ -146,7 +146,7 @@ impl Shape {
 
     pub fn translate(self, x: f64, y: f64, z: f64) -> Self {
         match self {
-            Self::Mesh3D(m) => Self::Mesh3D(Box::new(m.translate(x, y, z))),
+            Self::Mesh3D(m) => Self::bmesh_transform_with_fallback(*m, |m| m.translate(x, y, z)),
             Self::Sketch2D(s) => {
                 if z.abs() < 1e-12 {
                     Self::Sketch2D(s.translate(x, y, 0.0))
@@ -161,7 +161,7 @@ impl Shape {
 
     pub fn rotate(self, x: f64, y: f64, z: f64) -> Self {
         match self {
-            Self::Mesh3D(m) => Self::Mesh3D(Box::new(m.rotate(x, y, z))),
+            Self::Mesh3D(m) => Self::bmesh_transform_with_fallback(*m, |m| m.rotate(x, y, z)),
             Self::Sketch2D(s) => {
                 if x.abs() < 1e-12 && y.abs() < 1e-12 {
                     Self::Sketch2D(s.rotate(0.0, 0.0, z))
@@ -176,7 +176,7 @@ impl Shape {
 
     pub fn scale(self, sx: f64, sy: f64, sz: f64) -> Self {
         match self {
-            Self::Mesh3D(m) => Self::Mesh3D(Box::new(m.scale(sx, sy, sz))),
+            Self::Mesh3D(m) => Self::bmesh_transform_with_fallback(*m, |m| m.scale(sx, sy, sz)),
             Self::Sketch2D(s) => {
                 if (sz - 1.0).abs() < 1e-12 {
                     Self::Sketch2D(s.scale(sx, sy, 1.0))
@@ -189,6 +189,18 @@ impl Shape {
         }
     }
 
+    /// Try a BMesh transform; on panic fall back to CsgMesh transform.
+    fn bmesh_transform_with_fallback(m: BMesh<()>, f: impl FnOnce(BMesh<()>) -> BMesh<()>) -> Self {
+        let csg_backup = bmesh_to_csg_mesh(&m);
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(m))) {
+            Ok(result) => Self::Mesh3D(Box::new(result)),
+            Err(_) => {
+                eprintln!("[SynapsCAD] BMesh transform panicked, falling back to CsgMesh");
+                Self::FallbackMesh(csg_backup)
+            }
+        }
+    }
+
     pub fn mirror(self, nx: f64, ny: f64, nz: f64) -> Self {
         let len = (nx.mul_add(nx, ny.mul_add(ny, nz * nz))).sqrt();
         if len < 1e-12 {
@@ -196,7 +208,7 @@ impl Shape {
         }
         let plane = Plane::from_normal(Vector3::new(nx, ny, nz), 0.0);
         match self {
-            Self::Mesh3D(m) => Self::Mesh3D(Box::new(m.mirror(plane))),
+            Self::Mesh3D(m) => Self::bmesh_transform_with_fallback(*m, |m| m.mirror(plane)),
             Self::Sketch2D(s) => Self::Sketch2D(s.mirror(plane)),
             Self::FallbackMesh(m) => Self::FallbackMesh(m.mirror(plane)),
             Self::Failed(e) => Self::Failed(e),
