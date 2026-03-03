@@ -156,6 +156,15 @@ pub fn draw_part_labels(
         let center = global_transform.transform_point(aabb.center.into());
         let Ok(screen_pos) = camera.world_to_viewport(camera_transform, center) else { continue; };
 
+        // Hide labels that would overlap with the top toolbar or the left panel
+        let label_pos = egui::pos2(screen_pos.x + occupied.left, screen_pos.y);
+        
+        // Check overlap with left panel (redundant if using occupied.left as offset, but good for safety if logic changes)
+        if label_pos.x < occupied.left { continue; }
+        
+        // Check overlap with top toolbar area
+        if label_pos.y < 50.0 { continue; }
+
         let [r, g, b] = part_label.color;
         let part_color = egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
         let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
