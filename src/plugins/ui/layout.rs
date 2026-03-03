@@ -59,8 +59,8 @@ pub fn ui_layout_system(
         render_ai_assistant_header(ui, &mut chat_state, &mut ai_config, &mut available_models, &mut settings_open);
         ui.separator();
 
-        render_pending_attachments(ui, &mut chat_state, &mut preview_state);
         render_chat_input(ui, &mut chat_state, &mut file_picker, &runtime);
+        render_pending_attachments(ui, &mut chat_state, &mut preview_state);
 
         let total_remaining = ui.available_height();
         let chat_height = (total_remaining * 0.45).max(50.0);
@@ -208,7 +208,7 @@ fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker:
 
         if (send_clicked || enter_pressed) && !chat_state.input_buffer.trim().is_empty() {
             let user_msg = chat_state.input_buffer.trim().to_string();
-            let images = std::mem::take(&mut chat_state.pending_images);
+            let images = chat_state.pending_images.clone();
             chat_state.input_history.push((user_msg.clone(), images.clone()));
             chat_state.history_index = None;
             chat_state.messages.push(crate::plugins::ai_chat::ChatMessage { role: "user".into(), content: user_msg, thinking: None, images, auto_generated: false, is_error: false });
