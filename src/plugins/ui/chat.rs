@@ -88,29 +88,35 @@ pub fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> 
 
 pub fn render_markdown_text(ui: &mut egui::Ui, text: &str, is_error: bool) {
     let error_color = egui::Color32::from_rgb(255, 120, 120);
-    let header_bg = egui::Color32::from_rgb(60, 60, 80);
+    let text_color = if is_error { error_color } else { egui::Color32::from_rgb(190, 190, 210) };
+    let strong_color = if is_error { error_color } else { egui::Color32::WHITE };
 
     for line in text.split('\n') {
-        let line: &str = line;
         let trimmed = line.trim();
-        if trimmed.starts_with("**") && trimmed.ends_with("**") {
-            let header_text = trimmed.trim_matches('*');
-            egui::Frame::new()
-                .fill(header_bg)
-                .corner_radius(egui::CornerRadius::same(3))
-                .inner_margin(egui::Margin::symmetric(6, 2))
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.label(egui::RichText::new(header_text).strong().color(egui::Color32::WHITE));
-                });
-        } else if !line.is_empty() {
-            if is_error {
-                ui.label(egui::RichText::new(line).color(error_color));
-            } else {
-                ui.label(line);
-            }
-        } else {
-            ui.add_space(4.0);
+        if trimmed.is_empty() {
+            ui.add_space(6.0);
+            continue;
         }
+
+        let mut job = egui::text::LayoutJob::default();
+        let parts: Vec<&str> = line.split("**").collect();
+
+        for (i, part) in parts.iter().enumerate() {
+            let is_bold = i % 2 == 1;
+            let color = if is_bold { strong_color } else { text_color };
+            
+            job.append(
+                part,
+                0.0,
+                egui::text::TextFormat {
+                    font_id: egui::FontId::proportional(14.0),
+                    color,
+                    ..Default::default()
+                },
+            );
+        }
+
+        job.wrap.max_width = ui.available_width();
+        ui.label(job);
     }
 }
