@@ -226,6 +226,8 @@ pub struct ChatState {
     pub input_buffer: String,
     pub input_history: Vec<(String, Vec<ChatImage>)>,
     pub history_index: Option<usize>,
+    /// Saved draft text when the user starts cycling through history.
+    pub history_draft: Option<String>,
     pub is_streaming: bool,
     pub stream_receiver: Option<Mutex<mpsc::Receiver<AiStreamChunk>>>,
     /// Images queued to attach to the next sent message.
@@ -246,6 +248,7 @@ impl Default for ChatState {
             input_buffer: String::new(),
             input_history: Vec::new(),
             history_index: None,
+            history_draft: None,
             is_streaming: false,
             stream_receiver: None,
             pending_images: Vec::new(),

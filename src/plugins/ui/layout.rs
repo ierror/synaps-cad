@@ -190,17 +190,28 @@ fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker:
         }
 
         if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) && !chat_state.input_history.is_empty() {
+            if chat_state.history_index.is_none() {
+                chat_state.history_draft = Some(chat_state.input_buffer.clone());
+            }
             let len = chat_state.input_history.len();
             let idx = chat_state.history_index.map_or(len - 1, |i| if i == 0 { len - 1 } else { i - 1 });
             chat_state.history_index = Some(idx);
             let (text, images) = chat_state.input_history[idx].clone();
             chat_state.input_buffer = text; chat_state.pending_images = images;
         } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) && !chat_state.input_history.is_empty() {
+            if chat_state.history_index.is_none() {
+                chat_state.history_draft = Some(chat_state.input_buffer.clone());
+            }
             let len = chat_state.input_history.len();
             let idx = chat_state.history_index.map_or(0, |i| if i + 1 >= len { 0 } else { i + 1 });
             chat_state.history_index = Some(idx);
             let (text, images) = chat_state.input_history[idx].clone();
             chat_state.input_buffer = text; chat_state.pending_images = images;
+        } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) && chat_state.history_index.is_some() {
+            if let Some(draft) = chat_state.history_draft.take() {
+                chat_state.input_buffer = draft;
+            }
+            chat_state.history_index = None;
         }
 
         if ui.input(|i| i.key_pressed(egui::Key::V) && i.modifiers.command) && let Some(img) = clipboard_image_as_chat_image() { chat_state.pending_images.push(img); }
@@ -210,7 +221,7 @@ fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker:
             let user_msg = chat_state.input_buffer.trim().to_string();
             let images = chat_state.pending_images.clone();
             chat_state.input_history.push((user_msg.clone(), images.clone()));
-            chat_state.history_index = None;
+            chat_state.history_index = None; chat_state.history_draft = None;
             chat_state.messages.push(crate::plugins::ai_chat::ChatMessage { role: "user".into(), content: user_msg, thinking: None, images, auto_generated: false, is_error: false });
             chat_state.input_buffer.clear(); chat_state.is_streaming = true;
         }
