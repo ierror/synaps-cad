@@ -42,7 +42,7 @@ Code Editor (auto-apply)
 
 | File                | Purpose                                                                                                                     |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `src/compiler.rs`   | OpenSCAD → triangle mesh pipeline. Evaluates the AST, creates CSG primitives, performs boolean ops, outputs `Vec<MeshData>` |
+| `src/compiler/`     | OpenSCAD → triangle mesh pipeline. Modular directory handling evaluation, geometry, rendering, and types.                    |
 | `src/main.rs`       | App entry point, registers all plugins                                                                                      |
 | `src/app_config.rs` | Developer constants (not user-facing)                                                                                       |
 
@@ -118,16 +118,16 @@ if ($view == "assembly") view_assembly();
 
 ### Making Code Changes
 
-1. The compiler (`src/compiler.rs`) is the core — it evaluates OpenSCAD AST and produces meshes
+1. The compiler (`src/compiler/`) is the core — it evaluates OpenSCAD AST and produces meshes. Logic is split between `evaluator/`, `geometry/`, and `rendering/`.
 2. UI changes go in `src/plugins/ui.rs` (egui-based)
 3. New Bevy components/systems go in the appropriate plugin file
-4. Tests live at the bottom of `compiler.rs` (unit tests) and `tests/openscad_examples/` (integration)
+4. Tests live in `src/compiler/evaluator/tests.rs` (unit tests) and `tests/openscad_examples/` (integration)
 
 ### Error Handling
 
 **Never silently discard errors.** All compiler, renderer, and mesh processing errors must be surfaced to the user — not swallowed with `eprintln!` and an empty fallback.
 
-- **Evaluator warnings** are collected in `Evaluator.warnings` (e.g. unsupported modules, recursion limits, extrude issues) and shown to the user after compilation.
+- **Evaluator warnings** are collected in `Evaluator.warnings` (e.g. unsupported modules, recursion limits, extrude issues) and shown to the user after compilation. **Do not simply add warnings to ignore problems; prioritize removing the actual root cause of the warning whenever possible.**
 - **Mesh errors** (non-manifold, empty vertices) propagate as `Result::Err` and are shown per-part. Partial models still render — only the failing part is skipped.
 - **Panic recovery** via `catch_unwind` catches crashes in dependencies (boolmesh, csgrs) and surfaces them as user-visible errors.
 - **Bug-report hints**: Internal errors (panics, non-manifold mesh) include a message asking the user to report the bug with their code snippet.
