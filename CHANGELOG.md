@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+
+## [0.7.0] - 2026-03-03
+
+### Added
+
+- **Enhanced Chat UI** — improved message styling with distinct background colors for user, AI, and error messages.
+- **Thinking Process Display** — collapsible "thinking" section in chat responses to show the model's reasoning process.
+- **Streaming Indicator** — visual feedback while the AI is generating a response.
+- **$fn dropdown** — quick selection of common $fn values in the code editor toolbar.
+- **Chat History Draft** — if you start cycling through previous messages and then return to the draft, your unsent text is preserved.
+- **Dynamic Grid** — the XYZ grid now grows automatically based on the model's bounding box (with margin), minimum 50 units.
+- **Grid Toggle (`G` key)** — toggling grid visibility now correctly applies to dynamically resized grids.
+- **Agent Timer** — elapsed time is shown next to the spinner while the AI is working.
+
+### Changed
+
+- **Part Label Contrast** — improved visibility of part labels against the background.
+- **Auto-scroll Behavior** — chat now smarter about scrolling to new messages vs. preserving scroll position.
+- **Refactored Codebase** — split large `ui.rs` and `compilation.rs` files into modular components for better maintainability.
+- **AI Context Improvements** — added physical realism checks in AI instructions.
+
+### Fixed
+
+- **UI Overlap** — Part labels are now hidden when they would overlap with the top viewport toolbar or the left side panel, preventing visual clutter.
+- **Markdown Rendering** — Fixed bold text rendering (`**text**`) in chat messages and thinking blocks, ensuring inline bolding works correctly and markers are hidden.
+- **BMesh Transformations** — Refactor BMesh transformations to include fallback to CsgMesh on panic.
+
 ## [0.6.0] - 2026-03-02
 
 ### Added
