@@ -243,6 +243,7 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
 
         let visible_messages = &chat_state.messages[chat_state.session_start..];
         let msg_count = visible_messages.len();
+        let mut img_to_remove: Option<(usize, usize)> = None;
         for (rev_i, msg) in visible_messages.iter().rev().enumerate() {
             let msg_idx = chat_state.session_start + msg_count - 1 - rev_i;
             let is_user = msg.role == "user";
@@ -268,18 +269,23 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
                 if !is_user || msg.content.chars().count() > 80 { let scroll = render_chat_content(ui, &msg.content, msg.is_error); if chat_state.is_streaming && rev_i == 0 { scroll.scroll_to_me(Some(egui::Align::BOTTOM)); } }
                 if !msg.images.is_empty() {
                     ui.horizontal_wrapped(|ui| {
-                        for img in &msg.images {
+                        for (img_i, img) in msg.images.iter().enumerate() {
                             let frame = egui::Frame::new().fill(egui::Color32::from_rgb(40, 40, 58)).corner_radius(egui::CornerRadius::same(3)).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
-                                ui.add(egui::Label::new(egui::RichText::new("📷").small().color(egui::Color32::from_rgb(160, 160, 180))).sense(egui::Sense::click()))
+                                ui.horizontal(|ui| {
+                                    let label = ui.add(egui::Label::new(egui::RichText::new("📷").small().color(egui::Color32::from_rgb(160, 160, 180))).sense(egui::Sense::click()));
+                                    if is_user && ui.small_button("x").clicked() { img_to_remove = Some((msg_idx, img_i)); }
+                                    label
+                                })
                             });
-                            if frame.inner.hovered() { show_image_preview(ui, img, preview_state); }
-                            if frame.inner.clicked() { copy_chat_image_to_clipboard(img); }
+                            if frame.inner.inner.hovered() { show_image_preview(ui, img, preview_state); }
+                            if frame.inner.inner.clicked() { copy_chat_image_to_clipboard(img); }
                         }
                     });
                 }
             });
             ui.add_space(2.0);
         }
+        if let Some((m_idx, i_idx)) = img_to_remove { chat_state.messages[m_idx].images.remove(i_idx); }
     });
     if ui.input(|i| i.smooth_scroll_delta.y > 0.0) { chat_state.stick_to_bottom = false; }
 }

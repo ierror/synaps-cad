@@ -395,12 +395,6 @@ fn ai_send_system(
 
     let messages: Vec<ChatMessage> = chat_state.messages[chat_state.session_start..].to_vec();
     let part_context = build_part_context(&part_query);
-    // Collect user-attached images from the most recent user message
-    let user_images: Vec<ChatImage> = messages
-        .last()
-        .filter(|m| m.role == "user")
-        .map(|m| m.images.clone())
-        .unwrap_or_default();
 
     let current_code = scad_code.text.clone();
     let (active_view_name, _) = super::code_editor::detect_views(&current_code);
@@ -428,7 +422,7 @@ fn ai_send_system(
         eprintln!("[DEBUG] Extended thinking: {extended_thinking}");
         eprintln!("[DEBUG] System prompt: {} chars", system_prompt.len());
         eprintln!("[DEBUG] Messages: {}", messages.len());
-        eprintln!("[DEBUG] Views: {}, User images: {}", views.len(), user_images.len());
+        eprintln!("[DEBUG] Views: {}", views.len());
     }
 
     runtime.0.spawn(async move {
@@ -444,7 +438,6 @@ fn ai_send_system(
             &views,
             &other_views,
             part_context,
-            &user_images,
             tx.clone(),
         )
         .await;
@@ -470,7 +463,6 @@ async fn run_ai_stream(
     views: &[(String, String)],
     other_views: &[(String, Vec<(String, String)>)],
     part_context: String,
-    user_images: &[ChatImage],
     tx: mpsc::Sender<AiStreamChunk>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use genai::Client;
@@ -502,7 +494,7 @@ async fn run_ai_stream(
             let preview: String = msg.content.chars().take(200).collect();
             eprintln!("[DEBUG]   [{i}] {} (auto={}): {preview}", msg.role, msg.auto_generated);
         }
-        eprintln!("[DEBUG] Views: {}, User images: {}", views.len(), user_images.len());
+        eprintln!("[DEBUG] Views: {}", views.len());
         eprintln!("[DEBUG] ---");
     }
 
@@ -511,7 +503,22 @@ async fn run_ai_stream(
     for msg in &messages {
         match msg.role.as_str() {
             "user" => {
-                chat_req = chat_req.append_message(GenaiMessage::user(&msg.content));
+                if msg.images.is_empty() {
+                    chat_req = chat_req.append_message(GenaiMessage::user(&msg.content));
+                } else {
+                    let mut parts = vec![ContentPart::from_text(&msg.content)];
+                    for img in &msg.images {
+                        parts.push(ContentPart::from_text(format!("{}:", img.filename)));
+                        parts.push(ContentPart::from_binary_base64(
+                            &img.mime_type,
+                            img.base64_data.as_str(),
+                            Some(img.filename.clone()),
+                        ));
+                    }
+                    chat_req = chat_req.append_message(GenaiMessage::user(
+                        MessageContent::from_parts(parts),
+                    ));
+                }
             }
             "assistant" => {
                 chat_req = chat_req.append_message(GenaiMessage::assistant(&msg.content));
@@ -594,25 +601,9 @@ async fn run_ai_stream(
         }
     }
 
-    // Attach user-provided reference images
-    if !user_images.is_empty() {
-        let mut parts = vec![ContentPart::from_text("User-attached reference images:")];
-        for img in user_images {
-            parts.push(ContentPart::from_text(format!("{}:", img.filename)));
-            parts.push(ContentPart::from_binary_base64(
-                &img.mime_type,
-                img.base64_data.as_str(),
-                Some(img.filename.clone()),
-            ));
-        }
-        let img_msg = GenaiMessage::user(MessageContent::from_parts(parts));
-        chat_req = chat_req.append_message(img_msg);
-    }
-
     // Ensure the conversation ends with a user message (some APIs require this)
     let ends_with_user = !views.is_empty()
         || !other_views.is_empty()
-        || !user_images.is_empty()
         || messages.last().is_some_and(|m| m.role == "user");
     if !ends_with_user {
         chat_req = chat_req.append_message(GenaiMessage::user(
