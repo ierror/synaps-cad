@@ -48,8 +48,10 @@ module view_castle() {
     color("tan")
         for (x = [-18, 18])
             for (y = [-18, 18])
-                translate([x, y, 0])
+                translate([x, y, 0]) {
                     cylinder(h = 28, r = 5, $fn = 24);
+                    color("red") translate([0, 0, 28]) cylinder(h = 12, r1 = 6, r2 = 0, $fn = 24);
+                }
 }
 
 // --- All Together ---
