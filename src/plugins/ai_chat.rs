@@ -239,6 +239,8 @@ pub struct ChatState {
     /// Index into `messages` where the current session starts.
     /// Messages before this index are displayed but not sent to the AI.
     pub session_start: usize,
+    /// When streaming started, used to display elapsed time.
+    pub streaming_start: Option<std::time::Instant>,
 }
 
 impl Default for ChatState {

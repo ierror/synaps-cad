@@ -13,9 +13,27 @@ pub struct CadModel;
 #[derive(Component)]
 pub struct ViewportGizmo;
 
+/// Marker for the grid mesh (for despawn on resize).
+#[derive(Component)]
+pub struct GridEntity;
+
+/// Marker for axis line meshes (for despawn on resize).
+#[derive(Component)]
+pub struct AxisLineEntity;
+
 /// Tag for the directional light that follows the camera orientation.
 #[derive(Component)]
 pub struct CameraFollowLight;
+
+/// Tracks the current grid size so we only rebuild when it changes.
+#[derive(Resource)]
+pub struct CurrentGridSize(pub f32);
+
+impl Default for CurrentGridSize {
+    fn default() -> Self {
+        Self(50.0)
+    }
+}
 
 /// Visibility state for viewport gizmos (axes + grid).
 #[derive(Resource)]
@@ -45,8 +63,9 @@ impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<GizmoVisibility>()
             .init_resource::<LabelVisibility>()
+            .init_resource::<CurrentGridSize>()
             .add_systems(Startup, setup_scene)
-            .add_systems(Update, update_camera_follow_light);
+            .add_systems(Update, (update_camera_follow_light, update_grid_system));
     }
 }
 
@@ -80,39 +99,24 @@ fn setup_scene(
         CameraFollowLight,
     ));
 
-    // --- XYZ Axis Lines ---
-    let axis_length = 50.0;
+    // --- XYZ Axis Lines + Grid ---
+    let grid_size = 50.0;
+    spawn_axis_lines(&mut commands, &mut meshes, &mut materials, grid_size);
+    spawn_grid(&mut commands, &mut meshes, &mut materials, grid_size);
+}
 
+fn spawn_axis_lines(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    axis_length: f32,
+) {
     // X axis (red)
-    spawn_axis_line(
-        &mut commands,
-        &mut meshes,
-        &mut materials,
-        Vec3::ZERO,
-        Vec3::X * axis_length,
-        Color::srgb(0.9, 0.2, 0.2),
-    );
+    spawn_axis_line(commands, meshes, materials, Vec3::ZERO, Vec3::X * axis_length, Color::srgb(0.9, 0.2, 0.2));
     // Y axis (blue) — Bevy Y-up = OpenSCAD Z-up
-    spawn_axis_line(
-        &mut commands,
-        &mut meshes,
-        &mut materials,
-        Vec3::ZERO,
-        Vec3::Y * axis_length,
-        Color::srgb(0.2, 0.4, 0.9),
-    );
+    spawn_axis_line(commands, meshes, materials, Vec3::ZERO, Vec3::Y * axis_length, Color::srgb(0.2, 0.4, 0.9));
     // Z axis (green) — Bevy Z = OpenSCAD Y
-    spawn_axis_line(
-        &mut commands,
-        &mut meshes,
-        &mut materials,
-        Vec3::ZERO,
-        Vec3::Z * axis_length,
-        Color::srgb(0.2, 0.8, 0.2),
-    );
-
-    // --- Grid Lines on XZ plane (ground) ---
-    spawn_grid(&mut commands, &mut meshes, &mut materials);
+    spawn_axis_line(commands, meshes, materials, Vec3::ZERO, Vec3::Z * axis_length, Color::srgb(0.2, 0.8, 0.2));
 }
 
 fn spawn_axis_line(
@@ -140,6 +144,7 @@ fn spawn_axis_line(
         Mesh3d(meshes.add(mesh)),
         MeshMaterial3d(material),
         ViewportGizmo,
+        AxisLineEntity,
         PickingBehavior::IGNORE,
     ));
 }
@@ -149,8 +154,8 @@ fn spawn_grid(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
+    grid_size: f32,
 ) {
-    let grid_size = 50.0_f32;
     let grid_step = 10.0_f32;
     let half = grid_size;
     let steps = (grid_size / grid_step) as i32;
@@ -186,8 +191,78 @@ fn spawn_grid(
         Mesh3d(meshes.add(mesh)),
         MeshMaterial3d(material),
         ViewportGizmo,
+        GridEntity,
         PickingBehavior::IGNORE,
     ));
+}
+
+/// Recompute grid size based on model bounding box and rebuild if changed.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+fn update_grid_system(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut current_size: ResMut<CurrentGridSize>,
+    gizmo_vis: Res<GizmoVisibility>,
+    model_q: Query<(&Mesh3d, &GlobalTransform), With<CadModel>>,
+    mesh_assets: Res<Assets<Mesh>>,
+    grid_q: Query<Entity, With<GridEntity>>,
+    axis_q: Query<Entity, With<AxisLineEntity>>,
+) {
+    // Compute combined AABB of all CadModel entities
+    let mut bb_min = Vec3::splat(f32::INFINITY);
+    let mut bb_max = Vec3::splat(f32::NEG_INFINITY);
+    let mut found = false;
+
+    for (mesh3d, global_tf) in &model_q {
+        let Some(mesh) = mesh_assets.get(&mesh3d.0) else { continue };
+        let Some(aabb) = mesh.compute_aabb() else { continue };
+        let local_min = Vec3::from(aabb.center) - Vec3::from(aabb.half_extents);
+        let local_max = Vec3::from(aabb.center) + Vec3::from(aabb.half_extents);
+        for corner in [
+            Vec3::new(local_min.x, local_min.y, local_min.z),
+            Vec3::new(local_max.x, local_min.y, local_min.z),
+            Vec3::new(local_min.x, local_max.y, local_min.z),
+            Vec3::new(local_min.x, local_min.y, local_max.z),
+            Vec3::new(local_max.x, local_max.y, local_min.z),
+            Vec3::new(local_max.x, local_min.y, local_max.z),
+            Vec3::new(local_min.x, local_max.y, local_max.z),
+            Vec3::new(local_max.x, local_max.y, local_max.z),
+        ] {
+            let world = global_tf.transform_point(corner);
+            bb_min = bb_min.min(world);
+            bb_max = bb_max.max(world);
+        }
+        found = true;
+    }
+
+    let desired = if found {
+        let half_extents = (bb_max - bb_min) * 0.5;
+        let max_extent = half_extents.max_element();
+        // Round up to nearest 10 for clean grid lines
+        let raw = (max_extent * 1.5).max(50.0);
+        (raw / 10.0).ceil() * 10.0
+    } else {
+        50.0
+    };
+
+    if (desired - current_size.0).abs() < 0.1 {
+        return;
+    }
+
+    // Despawn old grid + axis entities
+    for entity in &grid_q {
+        commands.entity(entity).despawn();
+    }
+    for entity in &axis_q {
+        commands.entity(entity).despawn();
+    }
+
+    current_size.0 = desired;
+
+    // Respawn with new size
+    spawn_axis_lines(&mut commands, &mut meshes, &mut materials, desired);
+    spawn_grid(&mut commands, &mut meshes, &mut materials, desired);
 }
 
 /// Keeps the fill light roughly aligned with the camera so geometry is always well-lit.

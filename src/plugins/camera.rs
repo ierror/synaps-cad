@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy::render::mesh::MeshAabb;
 use bevy_egui::{EguiContexts, egui};
 
-use super::scene::{CadModel, GizmoVisibility, LabelVisibility, MainCamera, ViewportGizmo};
+use super::scene::{CadModel, CurrentGridSize, GizmoVisibility, LabelVisibility, MainCamera, ViewportGizmo};
 use super::ui::OccupiedScreenSpace;
 
 pub struct CameraPlugin;
@@ -321,7 +321,15 @@ fn toggle_gizmos_system(
     mut label_vis: ResMut<LabelVisibility>,
     mut gizmos: Query<&mut Visibility, With<ViewportGizmo>>,
     mut contexts: EguiContexts,
+    grid_size: Res<CurrentGridSize>,
 ) {
+    // When the grid was rebuilt, sync visibility on new entities
+    if grid_size.is_changed() && !gizmo_vis.visible {
+        for mut v in &mut gizmos {
+            *v = Visibility::Hidden;
+        }
+    }
+
     // Don't toggle if egui wants keyboard input (e.g. typing in text field)
     let Some(egui_ctx) = contexts.try_ctx_mut() else {
         return;
