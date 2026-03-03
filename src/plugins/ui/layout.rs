@@ -264,7 +264,7 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
                 if let Some(ref thinking) = msg.thinking {
                     egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id.with("thinking"), true).show_header(ui, |ui| {
                         ui.label(egui::RichText::new("💭 Thinking…").italics().color(egui::Color32::from_rgb(180, 180, 180)));
-                    }).body(|ui| { ui.label(egui::RichText::new(thinking).italics().color(egui::Color32::from_rgb(150, 150, 150))); });
+                    }).body(|ui| { crate::plugins::ui::chat::render_thinking_content(ui, thinking); });
                 }
                 if !is_user || msg.content.chars().count() > 80 { let scroll = render_chat_content(ui, &msg.content, msg.is_error); if chat_state.is_streaming && rev_i == 0 { scroll.scroll_to_me(Some(egui::Align::BOTTOM)); } }
                 if !msg.images.is_empty() {

@@ -120,3 +120,38 @@ pub fn render_markdown_text(ui: &mut egui::Ui, text: &str, is_error: bool) {
         ui.label(job);
     }
 }
+
+pub fn render_thinking_content(ui: &mut egui::Ui, text: &str) {
+    let text_color = egui::Color32::from_rgb(150, 150, 150);
+    let strong_color = egui::Color32::from_rgb(200, 200, 200);
+
+    for line in text.split('\n') {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            ui.add_space(6.0);
+            continue;
+        }
+
+        let mut job = egui::text::LayoutJob::default();
+        let parts: Vec<&str> = line.split("**").collect();
+
+        for (i, part) in parts.iter().enumerate() {
+            let is_bold = i % 2 == 1;
+            let color = if is_bold { strong_color } else { text_color };
+            
+            job.append(
+                part,
+                0.0,
+                egui::text::TextFormat {
+                    font_id: egui::FontId::proportional(14.0),
+                    color,
+                    italics: true,
+                    ..Default::default()
+                },
+            );
+        }
+
+        job.wrap.max_width = ui.available_width();
+        ui.label(job);
+    }
+}
