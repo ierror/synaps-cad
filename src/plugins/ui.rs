@@ -892,7 +892,7 @@ fn ui_layout_system(
                             (elapsed / cycle_speed) as usize % cached_view_textures.len();
                         let (label, texture) = &cached_view_textures[view_idx];
                         let display_size = 180.0;
-                        ui.vertical_centered(|ui| {
+                        let response = ui.vertical_centered(|ui| {
                             egui::Frame::new()
                                 .stroke(egui::Stroke::new(
                                     1.0,
@@ -917,6 +917,10 @@ fn ui_layout_system(
                                     .color(egui::Color32::from_rgb(140, 140, 160)),
                             );
                         });
+                        if no_response_yet {
+                            // Ensure the image spinner is visible
+                            response.response.scroll_to_me(Some(egui::Align::TOP));
+                        }
                         ui.ctx().request_repaint_after(
                             std::time::Duration::from_millis(100),
                         );
@@ -1059,23 +1063,6 @@ fn ui_layout_system(
                             }
                         });
                     ui.add_space(2.0);
-                }
-
-                if chat_state.is_streaming {
-                    // Check if the latest message is from the user (meaning AI hasn't started responding yet)
-                    if let Some(last_msg) = visible_messages.last() {
-                         if last_msg.role == "user" {
-                             let resp = ui.horizontal(|ui| {
-                                 ui.spinner();
-                                 ui.label(
-                                     egui::RichText::new("Thinking...")
-                                         .italics()
-                                         .color(egui::Color32::from_rgb(150, 150, 150)),
-                                 );
-                             });
-                             resp.response.scroll_to_me(Some(egui::Align::BOTTOM));
-                         }
-                    }
                 }
             });
 
@@ -2105,8 +2092,6 @@ fn draw_part_labels(
         return;
     };
 
-    let bg = egui::Color32::from_rgba_premultiplied(30, 30, 30, 200);
-
     for (part_label, global_transform, aabb) in &part_query {
         // Compute world-space center of the AABB
         let center = global_transform.transform_point(aabb.center.into());
@@ -2116,8 +2101,16 @@ fn draw_part_labels(
         };
 
         let [r, g, b] = part_label.color;
-        let label_color =
+        let part_color =
             egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
+
+        // Calculate luminance for text contrast
+        let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        let text_color = if lum > 0.6 {
+            egui::Color32::BLACK
+        } else {
+            egui::Color32::WHITE
+        };
 
         let label_text = &part_label.label;
         let char_width = 8.0;
@@ -2134,13 +2127,13 @@ fn draw_part_labels(
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 egui::Frame::new()
-                    .fill(bg)
+                    .fill(part_color)
                     .corner_radius(egui::CornerRadius::same(3))
                     .inner_margin(egui::Margin::symmetric(4, 2))
                     .show(ui, |ui| {
                         ui.label(
                             egui::RichText::new(label_text)
-                                .color(label_color)
+                                .color(text_color)
                                 .strong()
                                 .small(),
                         );
