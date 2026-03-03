@@ -119,7 +119,7 @@ fn render_ai_assistant_header(ui: &mut egui::Ui, chat_state: &mut ChatState, ai_
             });
             ui.label(egui::RichText::new("Verify").small());
             ui.checkbox(&mut ai_config.extended_thinking, "").on_hover_text("Extended Thinking");
-            ui.label(egui::RichText::new("Think").small());
+            ui.label(egui::RichText::new("extended").small()).on_hover_text("Extended Thinking");
 
             let mut current_adapter = ai_config.adapter_name.clone();
             if egui::ComboBox::from_id_salt("provider_select_main").selected_text(&current_adapter).width(80.0).show_ui(ui, |ui| {
