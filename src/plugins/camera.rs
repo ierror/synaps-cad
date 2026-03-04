@@ -101,11 +101,11 @@ fn orbit_camera_system(
             continue;
         }
         let scroll = match ev.unit {
-            MouseScrollUnit::Line => ev.y,
-            MouseScrollUnit::Pixel => ev.y * 0.03,
+            MouseScrollUnit::Line => ev.y * 5.0,
+            MouseScrollUnit::Pixel => ev.y * 0.15,
         };
         orbit.radius *= (1.0 - scroll * 0.02).clamp(0.5, 2.0);
-        orbit.radius = orbit.radius.clamp(0.5, 1000.0);
+        orbit.radius = orbit.radius.clamp(0.1, 5000.0);
     }
 
     // --- Middle mouse button: orbit / pan ---
@@ -164,10 +164,10 @@ fn orbit_camera_system(
         }
         // Numpad/key zoom
         if keyboard.pressed(KeyCode::Equal) || keyboard.pressed(KeyCode::NumpadAdd) {
-            orbit.radius = (orbit.radius * 0.97).max(0.5);
+            orbit.radius = (orbit.radius * 0.97).max(0.1);
         }
         if keyboard.pressed(KeyCode::Minus) || keyboard.pressed(KeyCode::NumpadSubtract) {
-            orbit.radius = (orbit.radius * 1.03).min(1000.0);
+            orbit.radius = (orbit.radius * 1.03).min(5000.0);
         }
         // Numpad views (also regular digit keys for keyboards without numpad)
         // Front: looking along -Z
