@@ -88,8 +88,16 @@ pub fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> 
 
 pub fn render_markdown_text(ui: &mut egui::Ui, text: &str, is_error: bool) {
     let error_color = egui::Color32::from_rgb(255, 120, 120);
-    let text_color = if is_error { error_color } else { egui::Color32::from_rgb(190, 190, 210) };
-    let strong_color = if is_error { error_color } else { egui::Color32::WHITE };
+    let text_color = if is_error {
+        error_color
+    } else {
+        egui::Color32::from_rgb(190, 190, 210)
+    };
+    let strong_color = if is_error {
+        error_color
+    } else {
+        egui::Color32::WHITE
+    };
 
     for line in text.split('\n') {
         let trimmed = line.trim();
@@ -98,18 +106,28 @@ pub fn render_markdown_text(ui: &mut egui::Ui, text: &str, is_error: bool) {
             continue;
         }
 
+        // Detect Markdown headers and checklists
+        let is_header = trimmed.starts_with('#');
+        let is_checklist = trimmed.starts_with("- [ ]") || trimmed.starts_with("- [x]");
+
         let mut job = egui::text::LayoutJob::default();
         let parts: Vec<&str> = line.split("**").collect();
 
         for (i, part) in parts.iter().enumerate() {
-            let is_bold = i % 2 == 1;
+            let is_bold = i % 2 == 1 || is_header || is_checklist;
             let color = if is_bold { strong_color } else { text_color };
-            
+
+            let font_id = if is_header {
+                egui::FontId::proportional(16.0)
+            } else {
+                egui::FontId::proportional(14.0)
+            };
+
             job.append(
                 part,
                 0.0,
                 egui::text::TextFormat {
-                    font_id: egui::FontId::proportional(14.0),
+                    font_id,
                     color,
                     ..Default::default()
                 },
