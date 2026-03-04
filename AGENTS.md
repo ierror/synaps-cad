@@ -122,6 +122,7 @@ if ($view == "assembly") view_assembly();
 2. UI changes go in `src/plugins/ui/` (egui-based). Logic is split between `layout.rs`, `chat.rs`, `editor.rs`, and `viewport.rs`.
 3. New Bevy components/systems go in the appropriate plugin file.
 4. Tests live in `src/compiler/evaluator/tests.rs` (unit tests) and `tests/openscad_examples/` (integration).
+5. Run clippy and tests after changes to ensure code quality and correctness.
 
 ### Error Handling
 
