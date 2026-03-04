@@ -119,7 +119,13 @@ impl Evaluator {
     pub fn parse_color_args(args: &[(Option<String>, Value)]) -> Option<[f32; 3]> {
         let first = args.first().map(|(_, v)| v)?;
         match first {
-            Value::String(name) => crate::compiler::rendering::colors::named_color(name),
+            Value::String(name) => {
+                if let Some(hex_color) = parse_hex_color(name) {
+                    Some(hex_color)
+                } else {
+                    crate::compiler::rendering::colors::named_color(name)
+                }
+            }
             Value::List(items) => {
                 if items.len() >= 3 {
                     let r = items[0].as_number()? as f32;
@@ -132,5 +138,32 @@ impl Evaluator {
             }
             _ => None,
         }
+    }
+}
+
+/// Parse a hex color string like "#D4A76A", "#fff", or "D4A76A" into [r, g, b] in 0.0–1.0 range.
+fn parse_hex_color(s: &str) -> Option<[f32; 3]> {
+    let hex = s.strip_prefix('#').unwrap_or(s);
+    match hex.len() {
+        6 => {
+            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+            Some([r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0])
+        }
+        3 => {
+            let r = u8::from_str_radix(&hex[0..1], 16).ok()?;
+            let g = u8::from_str_radix(&hex[1..2], 16).ok()?;
+            let b = u8::from_str_radix(&hex[2..3], 16).ok()?;
+            Some([r as f32 / 15.0, g as f32 / 15.0, b as f32 / 15.0])
+        }
+        8 => {
+            // #RRGGBBAA — ignore alpha
+            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+            Some([r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0])
+        }
+        _ => None,
     }
 }
