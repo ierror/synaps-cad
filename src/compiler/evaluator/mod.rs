@@ -62,12 +62,43 @@ impl Evaluator {
     }
 
     /// Resolve `$fn` from either explicit args or global variable.
+    /// Uses OpenSCAD logic: if `$fn` > 0, use it.
+    /// Otherwise, use `$fa` (min angle) and `$fs` (min size) based on radius `r`.
     pub fn resolve_fn(&self, args: &[(Option<String>, Value)]) -> usize {
+        self.resolve_fn_with_radius(args, None)
+    }
+
+    pub fn resolve_fn_with_radius(&self, args: &[(Option<String>, Value)], r: Option<f64>) -> usize {
         let fn_val = Self::get_named_arg(args, "$fn")
             .and_then(Value::as_number)
             .or_else(|| self.variables.get("$fn").and_then(Value::as_number))
             .unwrap_or(0.0);
-        if fn_val > 0.0 { fn_val as usize } else { 16 }
+
+        if fn_val > 0.0 {
+            return fn_val as usize;
+        }
+
+        let fa = self.variables.get("$fa").and_then(Value::as_number).unwrap_or(12.0);
+        let fs = self.variables.get("$fs").and_then(Value::as_number).unwrap_or(2.0);
+
+        // Limit fa to a reasonable minimum to prevent infinite segments
+        let fa = fa.max(0.01);
+        let fs = fs.max(0.01);
+
+        let fragments = if let Some(radius) = r {
+            if radius.abs() < 1e-9 {
+                3.0
+            } else {
+                let from_fa = 360.0 / fa;
+                let from_fs = (radius * 2.0 * std::f64::consts::PI) / fs;
+                f64::min(from_fa, from_fs)
+            }
+        } else {
+            // If radius is unknown, we can only use $fa
+            360.0 / fa
+        };
+
+        f64::ceil(fragments.max(5.0)) as usize
     }
 
     // =======================================================================

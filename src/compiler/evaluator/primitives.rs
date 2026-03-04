@@ -50,7 +50,7 @@ impl Evaluator {
             .or_else(|| Self::get_arg_number(args, "d", 0).map(|d| d / 2.0))
             .unwrap_or(1.0);
 
-        let slices = self.resolve_fn(args);
+        let slices = self.resolve_fn_with_radius(args, Some(r));
         let stacks = slices / 2;
 
         Some(Shape::from_csg_mesh(CsgMesh::sphere(
@@ -74,7 +74,8 @@ impl Evaluator {
             .unwrap_or(r1);
 
         let center = Self::get_arg_bool(args, "center", 99, false);
-        let slices = self.resolve_fn(args);
+        // Use max radius to determine segments
+        let slices = self.resolve_fn_with_radius(args, Some(r1.max(r2)));
 
         // For cones (r1 != r2): use CsgMesh::frustum which correctly
         // handles zero-radius (emits triangles, not degenerate quads).
@@ -195,7 +196,7 @@ impl Evaluator {
             .or_else(|| Self::get_arg_number(args, "d", 0).map(|d| d / 2.0))
             .unwrap_or(1.0);
 
-        let slices = self.resolve_fn(args);
+        let slices = self.resolve_fn_with_radius(args, Some(r));
         Some(Shape::Sketch2D(Sketch::circle(r, slices, None)))
     }
 
