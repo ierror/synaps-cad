@@ -77,7 +77,7 @@ impl Default for SplashScreen {
         Self {
             texture: None,
             timer: 1.5,
-            dismissing: true,
+            dismissing: false,
         }
     }
 }

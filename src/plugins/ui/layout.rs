@@ -49,7 +49,11 @@ pub fn ui_layout_system(
         *cached_view_textures = new_textures;
     }
 
-    let response = egui::SidePanel::left("side_panel").default_width(400.0).min_width(300.0).max_width(600.0).resizable(true).show(ctx, |ui| {
+    let panel_id = egui::Id::new("side_panel");
+    // Read the current user-set panel width before rendering to prevent content-driven expansion
+    let panel_width_before = egui::containers::panel::PanelState::load(ctx, panel_id)
+        .map_or(400.0, |s| s.rect.width());
+    let response = egui::SidePanel::left(panel_id).default_width(400.0).min_width(300.0).max_width(600.0).resizable(true).show(ctx, |ui| {
         let max_w = ui.available_width();
         ui.set_min_width(max_w); ui.set_max_width(max_w);
 
@@ -77,6 +81,20 @@ pub fn ui_layout_system(
     });
 
     occupied.left = response.response.rect.width();
+
+    // Prevent content from auto-expanding the panel. egui's SidePanel stores
+    // inner_response.response.rect which can be wider than the allocated panel
+    // if content overflows. Clamp back to the pre-render width unless the user
+    // is actively resizing the panel via drag handle.
+    let resize_id = panel_id.with("__resize");
+    let is_resizing = ctx.is_being_dragged(resize_id);
+    if let Some(state) = egui::containers::panel::PanelState::load(ctx, panel_id) {
+        if state.rect.width() > panel_width_before + 0.5 && !is_resizing {
+            let clamped_rect = egui::Rect::from_min_size(state.rect.min, egui::vec2(panel_width_before, state.rect.height()));
+            ctx.data_mut(|d| d.insert_persisted(panel_id, egui::containers::panel::PanelState { rect: clamped_rect }));
+            occupied.left = panel_width_before;
+        }
+    }
     if available_models.needs_configuration { settings_open.0 = true; }
     if settings_open.0 && ctx.input(|i| i.key_pressed(egui::Key::Escape)) { settings_open.0 = false; }
 
@@ -141,23 +159,33 @@ fn render_ai_assistant_header(ui: &mut egui::Ui, chat_state: &mut ChatState, ai_
 
 fn render_pending_attachments(ui: &mut egui::Ui, chat_state: &mut ChatState, preview_state: &mut ImagePreviewState) {
     if chat_state.pending_images.is_empty() { return; }
+    let max_w = ui.available_width();
+    let mut to_remove = None;
     ui.horizontal_wrapped(|ui| {
+        ui.set_max_width(max_w);
         ui.label(egui::RichText::new("Attached:").small().color(egui::Color32::from_rgb(140, 140, 160)));
-        let mut to_remove = None;
         for (i, img) in chat_state.pending_images.iter().enumerate() {
-            let frame = egui::Frame::new().fill(egui::Color32::from_rgb(40, 40, 58)).corner_radius(egui::CornerRadius::same(4)).inner_margin(egui::Margin::symmetric(4, 2)).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let label = ui.add(egui::Label::new(egui::RichText::new(&img.filename).small().color(egui::Color32::from_rgb(180, 180, 200))).sense(egui::Sense::click()));
-                    if ui.small_button("x").clicked() { to_remove = Some(i); }
-                    label
-                })
-            });
-            if frame.inner.inner.hovered() { show_image_preview(ui, img, preview_state); }
-            if frame.inner.inner.clicked() { copy_chat_image_to_clipboard(img); }
+            let display_name = truncate_filename(&img.filename, 20);
+            let resp = ui.add(
+                egui::Button::new(egui::RichText::new(format!("{display_name}  ✕")).small().color(egui::Color32::from_rgb(180, 180, 200)))
+                    .fill(egui::Color32::from_rgb(40, 40, 58))
+                    .corner_radius(4.0)
+            );
+            if resp.clicked() { to_remove = Some(i); }
+            let hovered = resp.hovered();
+            resp.on_hover_text(&img.filename);
+            if hovered { show_image_preview(ui, img, preview_state); }
         }
-        if let Some(idx) = to_remove { chat_state.pending_images.remove(idx); }
     });
+    if let Some(idx) = to_remove { chat_state.pending_images.remove(idx); }
     ui.add_space(2.0);
+}
+
+fn truncate_filename(name: &str, max_chars: usize) -> String {
+    if name.chars().count() <= max_chars { return name.to_string(); }
+    let chars: Vec<char> = name.chars().collect();
+    let truncated: String = chars[..max_chars].iter().collect();
+    format!("{truncated}…")
 }
 
 fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker: &mut crate::plugins::ui::resources::FilePickerState, runtime: &TokioRuntime) {
