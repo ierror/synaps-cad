@@ -167,7 +167,7 @@ fn render_pending_attachments(ui: &mut egui::Ui, chat_state: &mut ChatState, pre
         for (i, img) in chat_state.pending_images.iter().enumerate() {
             let display_name = truncate_filename(&img.filename, 20);
             let resp = ui.add(
-                egui::Button::new(egui::RichText::new(format!("{display_name}  ✕")).small().color(egui::Color32::from_rgb(180, 180, 200)))
+                egui::Button::new(egui::RichText::new(format!("{display_name}  x")).small().color(egui::Color32::from_rgb(180, 180, 200)))
                     .fill(egui::Color32::from_rgb(40, 40, 58))
                     .corner_radius(4.0)
             );
