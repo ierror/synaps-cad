@@ -3,6 +3,21 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.7.1] - 2026-03-04
+
+### Changed
+
+- **Splash Screen Timer** — adjusted default splash screen display duration.
+- **Markdown Rendering** — improved header detection and checklist rendering in chat messages.
+
+### Fixed
+
+- **Side Panel Auto-Expansion** — fixed a bug where the left panel would auto-expand when adding attachments, submitting chat messages, or resizing content. The panel width now stays fixed unless manually resized by the user via the drag handle.
+- **Attachment Filename Overflow** — long attachment filenames (e.g., screenshot names) no longer push the panel wider. Filenames are truncated to 20 characters with full name shown on hover tooltip. Multiple attachments wrap to new lines instead of extending horizontally.
+- **Color Parsing** — fixed color parsing to support hex color strings in `parse_color_args`.
+- **Zoom Limits** — extended from 0.5–1000.0 to 0.1–5000.0 for both mouse and keyboard, so you can zoom much further in/out before hitting limits
+
+
 ## [0.7.0] - 2026-03-03
 
 ### Added
@@ -29,6 +44,7 @@ All notable changes to this project will be documented in this file.
 - **Markdown Rendering** — Fixed bold text rendering (`**text**`) in chat messages and thinking blocks, ensuring inline bolding works correctly and markers are hidden.
 - **BMesh Transformations** — Refactor BMesh transformations to include fallback to CsgMesh on panic.
 
+
 ## [0.6.0] - 2026-03-02
 
 ### Added
@@ -45,6 +61,7 @@ All notable changes to this project will be documented in this file.
 - **UI Overflow** — the "View" selector and "Attached" image strip now use wrapped layouts. If you have many views or attachments, they will wrap to new lines instead of overflowing the right edge of the sidebar.
 - **Compilation error in UI system** — fixed a Rust compile error where `CompilationState` was incorrectly accessed as an immutable resource during a zoom-to-fit request.
 
+
 ## [0.5.2] - 2026-03-01
 
 ### Fixed
@@ -52,6 +69,7 @@ All notable changes to this project will be documented in this file.
 - **Non-manifold mesh fallback** — parts that fail manifold creation (e.g. thin `linear_extrude`) now render via direct polygon conversion instead of being silently dropped
 - **Removed unsafe code** — bumped `genai` to 0.6.0-beta.3 which threads auth resolver through `all_model_names()`, eliminating the `set_var` workaround; `unsafe_code` lint reverted to `forbid`
 - **Verification state reset** — verification state now properly resets to Idle after AI streaming ends
+
 
 ## [0.5.1] - 2026-03-01
 
@@ -63,6 +81,7 @@ All notable changes to this project will be documented in this file.
 - **View image cycling with spinner** — while waiting for AI response, cycles through rendered model views with a spinner overlay
 - **Stale view images after code clear** — clearing code now properly clears cached view textures instead of showing old images
 - **View cycling images not displaying** — textures are now cached across frames for proper GPU upload instead of re-created each frame
+
 
 ## [0.5.0] - 2026-02-28
 
@@ -84,6 +103,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - **Splash screen** duration reduced from 3s to 1.5s (fade from 0.5s to 0.3s)
+
 
 ## [0.4.0] - 2026-02-28
 
@@ -110,6 +130,7 @@ All notable changes to this project will be documented in this file.
 - Chat messages use `is_error` flag for reliable error styling (no string matching)
 - Boolean operations refactored into `bool_op_with_fallback` for unified boolmesh → BSP fallback logic
 - `Shape::Failed` variant prevents corrupted geometry from propagating through subsequent operations
+
 
 ## [0.3.0] - 2026-02-28
 
@@ -142,17 +163,21 @@ All notable changes to this project will be documented in this file.
 
 - API keys entered via the UI were not used for fetching the model list (genai workaround)
 
+
 ## [0.2.2] - 2026-06-27
 
 - Fix: Changed build target macos-13 to macos-latest
+
 
 ## [0.2.1] - 2026-06-27
 
 - Fix: Updated README with correct release version and download instructions
 
+
 ## [0.2.0] - 2026-06-27
 
 - First binary release with pre-built executables for Linux, macOS (Apple Silicon & Intel), and Windows
+
 
 ## [0.1.0] - 2026-02-27
 
