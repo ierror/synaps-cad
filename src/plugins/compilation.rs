@@ -111,7 +111,7 @@ impl Default for CompilationState {
 pub struct ModelViews {
     pub views: Vec<(String, String)>, // (label, base64_png) for active view
     /// Views rendered for non-active `$view` branches (smaller resolution).
-    /// Each entry is (view_name, Vec<(label, base64_png)>).
+    /// Each entry is (`view_name`, Vec<(label, `base64_png`)>).
     pub other_views: Vec<(String, Vec<(String, String)>)>,
 }
 
@@ -236,16 +236,14 @@ fn compile_openscad(code: &str, fn_value: u32) -> CompilationResult {
                         continue;
                     }
                     let mut alt_code = code.to_string();
-                    if set_active_view(&mut alt_code, view_name) {
-                        if let Ok(alt_views) = compiler::compile_views_only(&alt_code) {
-                            if !alt_views.is_empty() {
+                    if set_active_view(&mut alt_code, view_name)
+                        && let Ok(alt_views) = compiler::compile_views_only(&alt_code)
+                            && !alt_views.is_empty() {
                                 other_views.push((
                                     view_name.clone(),
                                     alt_views.into_iter().map(|v| (v.label, v.base64_png)).collect(),
                                 ));
                             }
-                        }
-                    }
                 }
                 if !other_views.is_empty() {
                     eprintln!(

@@ -8,6 +8,7 @@ use crate::plugins::ui::resources::{OccupiedScreenSpace, SplashScreen, Cheatshee
 
 use crate::plugins::ui::systems::SPLASH_FADE_DURATION;
 
+#[allow(clippy::too_many_arguments)]
 pub fn viewport_toolbar_system(
     mut contexts: EguiContexts,
     occupied: Res<OccupiedScreenSpace>,
@@ -166,8 +167,13 @@ pub fn draw_part_labels(
         if label_pos.y < 50.0 { continue; }
 
         let [r, g, b] = part_label.color;
-        let part_color = egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
-        let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let part_color = egui::Color32::from_rgb(
+            (r * 255.0).clamp(0.0, 255.0) as u8,
+            (g * 255.0).clamp(0.0, 255.0) as u8,
+            (b * 255.0).clamp(0.0, 255.0) as u8,
+        );
+        let lum = 0.0722f32.mul_add(b, 0.2126f32.mul_add(r, 0.7152 * g));
         let text_color = if lum > 0.6 { egui::Color32::BLACK } else { egui::Color32::WHITE };
 
         let label_text = &part_label.label;

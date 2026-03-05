@@ -2,7 +2,7 @@ use bevy_egui::egui;
 use egui::text::LayoutJob;
 use crate::plugins::ui::resources::ImagePreviewState;
 
-pub(crate) const OPENSCAD_BUILTINS: &[&str] = &[
+pub const OPENSCAD_BUILTINS: &[&str] = &[
     "cube", "sphere", "cylinder", "polyhedron", "circle", "square", "polygon", "text",
     "translate", "rotate", "scale", "mirror", "multmatrix", "color", "offset", "resize",
     "union", "difference", "intersection", "hull", "minkowski", "linear_extrude",
@@ -13,7 +13,7 @@ pub(crate) const OPENSCAD_BUILTINS: &[&str] = &[
     "min", "max", "norm", "cross", "rands",
 ];
 
-pub(crate) const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+pub const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 
 pub fn highlight_openscad(text: &str, font_id: egui::FontId) -> LayoutJob {
     use openscad_rs::token::Token;
@@ -49,11 +49,10 @@ pub fn highlight_openscad(text: &str, font_id: egui::FontId) -> LayoutJob {
 
         let slice = &text[span.start..span.end];
         let color = match token {
-            Token::Module | Token::Function | Token::If | Token::Else | Token::For | Token::Let | Token::Assert | Token::Echo | Token::Each | Token::Undef => keyword_color,
+            Token::Module | Token::Function | Token::If | Token::Else | Token::For | Token::Let | Token::Assert | Token::Echo | Token::Each | Token::Undef | Token::Include | Token::Use => keyword_color,
             Token::True | Token::False => bool_color,
             Token::Number(_) => number_color,
             Token::String(_) => string_color,
-            Token::Include | Token::Use => keyword_color,
             Token::Identifier => {
                 if slice.starts_with('$') {
                     special_var_color
@@ -230,13 +229,13 @@ pub fn load_image_as_chat_image(path: &std::path::Path) -> Option<crate::plugins
 }
 
 pub fn clipboard_image_as_chat_image() -> Option<crate::plugins::ai_chat::ChatImage> {
+    use base64::Engine;
     if let Some(path) = clipboard_file_path() {
         let is_image = path.extension().and_then(|e| e.to_str())
             .is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str()));
         if is_image { return load_image_as_chat_image(&path); }
     }
 
-    use base64::Engine;
     let mut clipboard = arboard::Clipboard::new().ok()?;
     let img_data = clipboard.get_image().ok()?;
 

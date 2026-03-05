@@ -13,6 +13,7 @@ pub use crate::plugins::ui::viewport::{viewport_toolbar_system, cheatsheet_syste
 const SPLASH_DURATION: f32 = 0.75;
 pub const SPLASH_FADE_DURATION: f32 = 0.3;
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub fn splash_screen_system(
     mut contexts: EguiContexts,
     mut splash: ResMut<SplashScreen>,
@@ -54,9 +55,7 @@ pub fn splash_screen_system(
 }
 
 pub fn poll_file_picker_system(mut file_picker: ResMut<FilePickerState>, mut chat_state: ResMut<ChatState>) {
-    let paths = if let Some(ref rx_mutex) = file_picker.receiver {
-        rx_mutex.lock().unwrap().try_recv().ok()
-    } else { None };
+    let paths = file_picker.receiver.as_ref().and_then(|rx_mutex| rx_mutex.lock().unwrap().try_recv().ok());
 
     if let Some(paths) = paths {
         file_picker.receiver = None;
@@ -65,9 +64,7 @@ pub fn poll_file_picker_system(mut file_picker: ResMut<FilePickerState>, mut cha
 }
 
 pub fn poll_export_system(mut export_state: ResMut<ExportState>, last_parts: Res<LastCompiledParts>, mut app_errors: ResMut<AppErrors>) {
-    let maybe_path = if let Some(ref rx_mutex) = export_state.receiver {
-        rx_mutex.lock().unwrap().try_recv().ok()
-    } else { None };
+    let maybe_path = export_state.receiver.as_ref().and_then(|rx_mutex| rx_mutex.lock().unwrap().try_recv().ok());
 
     if let Some(maybe_path) = maybe_path {
         let format = export_state.pending_format.take(); export_state.receiver = None;
@@ -82,10 +79,8 @@ pub fn poll_export_system(mut export_state: ResMut<ExportState>, last_parts: Res
 
 pub fn file_drop_system(mut dnd_events: EventReader<bevy::window::FileDragAndDrop>, mut chat_state: ResMut<ChatState>) {
     for event in dnd_events.read() {
-        if let bevy::window::FileDragAndDrop::DroppedFile { path_buf, .. } = event {
-            if path_buf.extension().and_then(|e| e.to_str()).is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str())) {
-                if let Some(img) = load_image_as_chat_image(path_buf) { chat_state.pending_images.push(img); }
-            }
-        }
+        if let bevy::window::FileDragAndDrop::DroppedFile { path_buf, .. } = event
+            && path_buf.extension().and_then(|e| e.to_str()).is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
+                && let Some(img) = load_image_as_chat_image(path_buf) { chat_state.pending_images.push(img); }
     }
 }

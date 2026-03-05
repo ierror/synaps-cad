@@ -38,13 +38,12 @@ pub fn ui_layout_system(
         let mut new_textures = Vec::new();
         for (label, base64_png) in &model_views.views {
             if base64_png.is_empty() { continue; }
-            if let Ok(png_bytes) = base64::engine::general_purpose::STANDARD.decode(base64_png) {
-                if let Ok(dyn_img) = image::load_from_memory(&png_bytes) {
+            if let Ok(png_bytes) = base64::engine::general_purpose::STANDARD.decode(base64_png)
+                && let Ok(dyn_img) = image::load_from_memory(&png_bytes) {
                     let rgba = dyn_img.to_rgba8();
                     let color_image = egui::ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw());
                     new_textures.push((label.clone(), ctx.load_texture(format!("view_cycle_{label}"), color_image, egui::TextureOptions::LINEAR)));
                 }
-            }
         }
         *cached_view_textures = new_textures;
     }
@@ -88,13 +87,12 @@ pub fn ui_layout_system(
     // is actively resizing the panel via drag handle.
     let resize_id = panel_id.with("__resize");
     let is_resizing = ctx.is_being_dragged(resize_id);
-    if let Some(state) = egui::containers::panel::PanelState::load(ctx, panel_id) {
-        if state.rect.width() > panel_width_before + 0.5 && !is_resizing {
+    if let Some(state) = egui::containers::panel::PanelState::load(ctx, panel_id)
+        && state.rect.width() > panel_width_before + 0.5 && !is_resizing {
             let clamped_rect = egui::Rect::from_min_size(state.rect.min, egui::vec2(panel_width_before, state.rect.height()));
             ctx.data_mut(|d| d.insert_persisted(panel_id, egui::containers::panel::PanelState { rect: clamped_rect }));
             occupied.left = panel_width_before;
         }
-    }
     if available_models.needs_configuration { settings_open.0 = true; }
     if settings_open.0 && ctx.input(|i| i.key_pressed(egui::Key::Escape)) { settings_open.0 = false; }
 
@@ -143,7 +141,7 @@ fn render_ai_assistant_header(ui: &mut egui::Ui, chat_state: &mut ChatState, ai_
             if egui::ComboBox::from_id_salt("provider_select_main").selected_text(&current_adapter).width(80.0).show_ui(ui, |ui| {
                 let mut changed = false;
                 for &adapter in ADAPTER_NAMES {
-                    let configured = !env_var_for_adapter(adapter).is_some() || env_var_for_adapter(adapter).and_then(|n| std::env::var(n).ok()).is_some_and(|v| !v.is_empty()) || ai_config.api_keys.get(adapter).is_some_and(|k| !k.is_empty());
+                    let configured = env_var_for_adapter(adapter).is_none() || env_var_for_adapter(adapter).and_then(|n| std::env::var(n).ok()).is_some_and(|v| !v.is_empty()) || ai_config.api_keys.get(adapter).is_some_and(|k| !k.is_empty());
                     ui.add_enabled_ui(configured, |ui| { if ui.selectable_value(&mut current_adapter, adapter.to_string(), adapter).clicked() { changed = true; } });
                 }
                 changed
@@ -265,11 +263,12 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
         };
 
         // Render AI status bar at the bottom if streaming
-        let mut status_height = 0.0;
-        if chat_state.is_streaming && !verifying {
+        let status_height = if chat_state.is_streaming && !verifying {
             let no_resp = !chat_state.messages.last().is_some_and(|m| m.role == "assistant" && !m.content.is_empty());
-            status_height = if no_resp && !view_textures.is_empty() { 64.0 } else { 24.0 };
-        }
+            if no_resp && !view_textures.is_empty() { 64.0 } else { 24.0 }
+        } else {
+            0.0
+        };
 
         let scroll_height = (chat_height - status_height - ui.spacing().item_spacing.y).max(20.0);
 
@@ -336,6 +335,7 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
                 format!("{m:02}:{s:02}")
             });
             let no_resp = !chat_state.messages.last().is_some_and(|m| m.role == "assistant" && !m.content.is_empty());
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             if no_resp && !view_textures.is_empty() {
                 let view_idx = (ui.input(|i| i.time) / 1.5) as usize % view_textures.len();
                 let (label, texture) = &view_textures[view_idx];
@@ -349,15 +349,14 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
                     }
                     ui.label(egui::RichText::new(format!("📷 {label}")).small().color(egui::Color32::from_rgb(140, 140, 160)));
                 });
-                ui.ctx().request_repaint();
             } else {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     if let Some(ref elapsed) = elapsed_text {
                         ui.label(egui::RichText::new(elapsed).monospace().color(egui::Color32::from_rgb(200, 200, 210)));
                     }
                 });
-                ui.ctx().request_repaint();
             }
+            ui.ctx().request_repaint();
         }
     });
 }
@@ -399,12 +398,12 @@ fn render_code_header(ui: &mut egui::Ui, scad_code: &mut ScadCode, chat_state: &
                                         let handle = rfd::AsyncFileDialog::new().set_file_name(format!("model.{ext}")).add_filter(ext.to_uppercase(), &[ext]).save_file().await;
                                         let _ = tx.send(handle.map(|h| h.path().to_path_buf()));
                                     });
-                                    ui.memory_mut(|m| m.close_popup());
+                                    ui.memory_mut(bevy_egui::egui::Memory::close_popup);
                                 }
                             }
                         });
                     });
-                    if ui.input(|i| i.pointer.any_click()) && !area.response.contains_pointer() && !export_btn.contains_pointer() { ui.memory_mut(|m| m.close_popup()); }
+                    if ui.input(|i| i.pointer.any_click()) && !area.response.contains_pointer() && !export_btn.contains_pointer() { ui.memory_mut(bevy_egui::egui::Memory::close_popup); }
                 }
             }
         });
@@ -434,7 +433,7 @@ fn render_settings_dialog(ctx: &egui::Context, settings_open: &mut SettingsDialo
             ui.label("Provider:"); let prev = ai_config.adapter_name.clone();
             egui::ComboBox::from_id_salt("ai_adapter_select").selected_text(&ai_config.adapter_name).show_ui(ui, |ui| {
                 for &adapter in ADAPTER_NAMES {
-                    let configured = !env_var_for_adapter(adapter).is_some() || env_var_for_adapter(adapter).and_then(|n| std::env::var(n).ok()).is_some_and(|v| !v.is_empty()) || ai_config.api_keys.get(adapter).is_some_and(|k| !k.is_empty());
+                    let configured = env_var_for_adapter(adapter).is_none() || env_var_for_adapter(adapter).and_then(|n| std::env::var(n).ok()).is_some_and(|v| !v.is_empty()) || ai_config.api_keys.get(adapter).is_some_and(|k| !k.is_empty());
                     ui.add_enabled_ui(configured, |ui| { ui.selectable_value(&mut ai_config.adapter_name, adapter.to_string(), adapter); });
                 }
             });
@@ -447,14 +446,14 @@ fn render_settings_dialog(ctx: &egui::Context, settings_open: &mut SettingsDialo
             ui.label("Model:");
             let needs_key = env_var_for_adapter(&ai_config.adapter_name).is_some();
             let has_key = !needs_key || env_var_for_adapter(&ai_config.adapter_name).and_then(|n| std::env::var(n).ok()).is_some_and(|v| !v.is_empty()) || !ai_config.api_key().is_empty();
-            if !has_key { ui.colored_label(egui::Color32::from_rgb(255, 180, 50), "⚠ Set API key first"); } else {
+            if has_key {
                 let model_label = if available_models.loading { "Loading...".into() } else if available_models.models.is_empty() { "No models available".into() } else { ai_config.model_name.clone() };
                 let prev_model = ai_config.model_name.clone();
                 egui::ComboBox::from_id_salt("ai_model_select").selected_text(model_label).show_ui(ui, |ui| {
                     for model in &available_models.models { ui.selectable_value(&mut ai_config.model_name, model.clone(), model.as_str()); }
                 });
                 if ai_config.model_name != prev_model && available_models.models.contains(&ai_config.model_name) { available_models.needs_configuration = false; }
-            }
+            } else { ui.colored_label(egui::Color32::from_rgb(255, 180, 50), "⚠ Set API key first"); }
         });
         if let Some(ref err) = available_models.error { ui.colored_label(egui::Color32::from_rgb(255, 100, 100), format!("⚠ {err}")); }
         ui.horizontal(|ui| {

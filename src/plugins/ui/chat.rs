@@ -23,12 +23,10 @@ pub fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> 
             let after_fence = &remaining[fence_start + 3..];
             if let Some(close_pos) = after_fence.find("```") {
                 let block = &after_fence[..close_pos];
-                let (lang, code) = if let Some(newline) = block.find('\n') {
+                let (lang, code) = block.find('\n').map_or(("", block), |newline| {
                     let lang_tag = block[..newline].trim();
                     (lang_tag, &block[newline + 1..])
-                } else {
-                    ("", block)
-                };
+                });
 
                 let r = egui::Frame::new()
                     .fill(code_bg)
@@ -51,12 +49,10 @@ pub fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> 
                 remaining = &after_fence[close_pos + 3..];
             } else {
                 let block = after_fence;
-                let (lang, code) = if let Some(newline) = block.find('\n') {
+                let (lang, code) = block.find('\n').map_or(("", block), |newline| {
                     let lang_tag = block[..newline].trim();
                     (lang_tag, &block[newline + 1..])
-                } else {
-                    ("", block)
-                };
+                });
                 let r = egui::Frame::new()
                     .fill(code_bg)
                     .corner_radius(egui::CornerRadius::same(4))

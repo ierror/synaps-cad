@@ -197,7 +197,7 @@ fn spawn_grid(
 }
 
 /// Recompute grid size based on model bounding box and rebuild if changed.
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::too_many_arguments)]
 fn update_grid_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,

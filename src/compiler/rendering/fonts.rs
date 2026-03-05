@@ -14,17 +14,17 @@ const LIBERATION_SANS_BOLD_ITALIC: &[u8] =
 
 /// Resolve font data from a font name parameter.
 /// Tries system fonts first, falls back to bundled Liberation Sans.
+#[must_use] 
 pub fn resolve_font_data(font_param: Option<&str>) -> Vec<u8> {
     let Some(font_str) = font_param else {
         return LIBERATION_SANS_REGULAR.to_vec();
     };
 
     // Parse "FontName:style=Bold" format
-    let (family, style) = if let Some(idx) = font_str.find(":style=") {
-        (&font_str[..idx], font_str[idx + 7..].to_lowercase())
-    } else {
-        (font_str, String::new())
-    };
+    let (family, style) = font_str.find(":style=").map_or_else(
+        || (font_str, String::new()),
+        |idx| (&font_str[..idx], font_str[idx + 7..].to_lowercase()),
+    );
 
     // Check for bundled Liberation Sans variants
     let family_lower = family.to_lowercase();
@@ -114,11 +114,9 @@ fn search_font_dir(
                 && name_lower.contains(family_lower)
                 && (style_suffix == "-Regular"
                     || name_lower.contains(&style_suffix.to_lowercase().replace('-', "")))
-            {
-                if let Ok(data) = std::fs::read(&path) {
+                && let Ok(data) = std::fs::read(&path) {
                     return Some(data);
                 }
-            }
         }
     }
     None
@@ -169,6 +167,7 @@ pub fn apply_text_alignment(sketch: Sketch<()>, halign: &str, valign: &str) -> S
 }
 
 /// Render text with proper character spacing and direction support.
+///
 /// Works around csgrs's broken space-character advance by rendering
 /// character-by-character with advance widths from the font's horizontal metrics.
 pub fn render_text_with_direction(
@@ -188,29 +187,27 @@ pub fn render_text_with_direction(
         _ => "ltr",
     };
 
-    let face = match ttf_parser::Face::parse(font_data, 0) {
-        Ok(f) => f,
-        Err(_) => return Sketch::new(),
+    let Ok(face) = ttf_parser::Face::parse(font_data, 0) else {
+        return Sketch::new();
     };
 
-    let upem = face.units_per_em() as f64;
+    let upem = f64::from(face.units_per_em());
     // OpenSCAD uses FreeType with FT_Set_Char_Size(face, 0, size*64, 100, 100).
     // This gives a scale of (size * 100/72) / upem from font units to output units.
     // csgrs internally scales glyphs by (input_size * 0.3527777 / 2048).
     // We solve: corrected_size * 0.3527777 / 2048 = size * (100/72) / upem
     // → corrected_size = size * 100 / (72 * 0.3527777)  [when upem=2048]
-    let corrected_size = size * 100.0 / (72.0 * 0.3527777);
+    let corrected_size = size * 100.0 / (72.0 * 0.352_777_7);
     let font_scale = size * 100.0 / (72.0 * upem);
 
     // For vertical layout, use OS/2 Typo metrics if available (matches OpenSCAD/Qt tight spacing).
     // Fallback to hhea ascender/descender (usually larger).
-    let (ascender, descender) = if let Some(os2) = face.tables().os2 {
-        (os2.typographic_ascender(), os2.typographic_descender())
-    } else {
-        (face.ascender(), face.descender())
-    };
-    let ascender = ascender as f64 * font_scale;
-    let descender = descender as f64 * font_scale;
+    let (ascender, descender) = face.tables().os2.map_or_else(
+        || (face.ascender(), face.descender()),
+        |os2| (os2.typographic_ascender(), os2.typographic_descender()),
+    );
+    let ascender = f64::from(ascender) * font_scale;
+    let descender = f64::from(descender) * font_scale;
     // Ignore line_gap and do NOT apply spacing to horizontal advance.
     let line_height = (ascender - descender) * spacing;
 
@@ -243,13 +240,10 @@ pub fn render_text_with_direction(
         }
 
         // Get advance width for this character from the font
-        let advance = if let Some(gid) = face.glyph_index(*ch) {
+        let advance = face.glyph_index(*ch).map_or(size * 0.25, |gid| {
             face.glyph_hor_advance(gid)
-                .map(|a| a as f64 * font_scale)
-                .unwrap_or(size * 0.25)
-        } else {
-            size * 0.25
-        };
+                .map_or(size * 0.25, |a| f64::from(a) * font_scale)
+        });
 
         // Only render non-space characters (those with an outline)
         let has_outline = face

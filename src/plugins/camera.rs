@@ -356,6 +356,7 @@ fn toggle_gizmos_system(
 }
 
 /// Handle clicks in ruler mode — cast ray to find surface point.
+#[allow(clippy::too_many_arguments)]
 fn ruler_click_system(
     mut ruler: ResMut<RulerState>,
     mouse_button: Res<ButtonInput<MouseButton>>,

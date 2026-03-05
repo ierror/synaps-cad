@@ -10,7 +10,10 @@ use crate::compiler::types::MeshData;
 
 /// Convert `CsgMesh` to `BMesh`. If the mesh has boundary edges (non-manifold),
 /// attempts to fix it by deduplicating vertices and removing degenerate/duplicate triangles.
-/// Returns an error if all repair attempts fail.
+///
+/// # Errors
+/// Returns an error string if all repair attempts fail.
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn csg_mesh_to_bmesh(mesh: &CsgMesh<()>) -> Result<BMesh<()>, String> {
     use boolmesh::prelude::Manifold;
     const QUANT: f64 = 1e6;
@@ -27,7 +30,6 @@ pub fn csg_mesh_to_bmesh(mesh: &CsgMesh<()>) -> Result<BMesh<()>, String> {
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Manifold::new(&p, &i)))
             .map_err(|_| "Manifold::new panicked (non-manifold mesh)".to_string())?
             .map(|m| BMesh::from_manifold(m, None))
-            .map_err(|e| e.to_string())
     };
 
     // Triangulate from polygons directly with proper vertex sharing.
@@ -100,11 +102,10 @@ pub fn csg_mesh_to_bmesh(mesh: &CsgMesh<()>) -> Result<BMesh<()>, String> {
             clean_tris.extend_from_slice(tri);
         }
     }
-    if clean_tris.len() != tris.len() {
-        if let Ok(bmesh) = try_manifold(&verts, &clean_tris) {
+    if clean_tris.len() != tris.len()
+        && let Ok(bmesh) = try_manifold(&verts, &clean_tris) {
             return Ok(bmesh);
         }
-    }
 
     eprintln!("[SynapsCAD] Warning: Non-manifold mesh, all repair attempts failed");
     Err("Non-manifold mesh: boolean operation produced geometry that could not be repaired. Please report this bug with the code that caused it.".into())
@@ -118,6 +119,9 @@ pub fn bmesh_to_csg_mesh(bmesh: &BMesh<()>) -> CsgMesh<()> {
     CsgMesh::from_polygons(&polygons, None)
 }
 
+/// # Errors
+/// Returns an error if the mesh has no vertices.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 pub fn bmesh_to_mesh_data(bmesh: &BMesh<()>) -> Result<MeshData, String> {
     let mut positions = Vec::new();
     let mut normals = Vec::new();
@@ -172,8 +176,12 @@ pub fn bmesh_to_mesh_data(bmesh: &BMesh<()>) -> Result<MeshData, String> {
     })
 }
 
-/// Direct CsgMesh → MeshData conversion, bypassing BMesh/Manifold.
+/// Direct `CsgMesh` → `MeshData` conversion, bypassing BMesh/Manifold.
 /// Used as a fallback when manifold creation fails (e.g. thin extrudes).
+///
+/// # Errors
+/// Returns an error if the mesh has no vertices.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 pub fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
     let mut positions = Vec::new();
     let mut normals = Vec::new();
@@ -231,6 +239,7 @@ pub fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
 
 /// Convert axis-angle rotation (angle in degrees, axis [ax,ay,az]) to Euler angles [rx,ry,rz] in degrees.
 /// Uses Rodrigues' rotation matrix → intrinsic ZYX Euler extraction.
+#[must_use] 
 pub fn axis_angle_to_euler(angle_deg: f64, ax: f64, ay: f64, az: f64) -> (f64, f64, f64) {
     let len = ax.mul_add(ax, ay.mul_add(ay, az * az)).sqrt();
     if len < 1e-12 {

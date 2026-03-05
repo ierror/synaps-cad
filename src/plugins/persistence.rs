@@ -44,10 +44,10 @@ struct PersistentData {
     editor_code: String,
     #[serde(default = "default_verification_rounds")]
     max_verification_rounds: u32,
-    /// Per-provider API keys (adapter_name → key).
+    /// Per-provider API keys (`adapter_name` → key).
     #[serde(default)]
     api_keys: std::collections::HashMap<String, String>,
-    /// Per-provider last-used model (adapter_name → model_name).
+    /// Per-provider last-used model (`adapter_name` → `model_name`).
     #[serde(default)]
     model_per_provider: std::collections::HashMap<String, String>,
     #[serde(default)]
@@ -69,11 +69,11 @@ impl Default for UiSettings {
     }
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 
-fn default_verification_rounds() -> u32 {
+const fn default_verification_rounds() -> u32 {
     2
 }
 
@@ -163,7 +163,10 @@ fn load_session_system(
             if !merged.is_empty() {
                 merged.push_str("\n\n");
             }
-            merged.push_str(&format!("// --- {name} ---\n{code}"));
+            merged.push_str("// --- ");
+            merged.push_str(name);
+            merged.push_str(" ---\n");
+            merged.push_str(code);
         }
         scad_code.text = merged;
     } else if !saved.editor_code.is_empty() {

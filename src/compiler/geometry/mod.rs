@@ -7,7 +7,7 @@ use csgrs::sketch::Sketch;
 use csgrs::csg::CSG;
 use nalgebra::Vector3;
 
-use crate::compiler::geometry::conversions::*;
+use crate::compiler::geometry::conversions::{csg_mesh_to_bmesh, bmesh_to_csg_mesh};
 
 #[derive(Clone, Copy, Debug)]
 pub enum BoolOp {
@@ -28,7 +28,7 @@ pub enum TransformKind {
 pub enum Shape {
     Mesh3D(Box<BMesh<()>>),
     Sketch2D(Sketch<()>),
-    /// Render-only fallback: CsgMesh that failed manifold creation.
+    /// Render-only fallback: `CsgMesh` that failed manifold creation.
     /// Can be rendered directly but boolean ops will degrade to empty.
     FallbackMesh(CsgMesh<()>),
     /// A boolean operation panicked — propagate failure to avoid cascading panics.
@@ -81,6 +81,7 @@ impl Shape {
         }
     }
 
+    #[must_use]
     pub fn union(self, other: Self) -> Self {
         if let Self::Failed(e) = &self { return Self::Failed(e.clone()); }
         if let Self::Failed(e) = &other { return Self::Failed(e.clone()); }
@@ -90,6 +91,7 @@ impl Shape {
         }
     }
 
+    #[must_use]
     pub fn difference(self, other: Self) -> Self {
         if let Self::Failed(e) = &self { return Self::Failed(e.clone()); }
         if let Self::Failed(e) = &other { return Self::Failed(e.clone()); }
@@ -99,6 +101,7 @@ impl Shape {
         }
     }
 
+    #[must_use]
     pub fn intersection(self, other: Self) -> Self {
         if let Self::Failed(e) = &self { return Self::Failed(e.clone()); }
         if let Self::Failed(e) = &other { return Self::Failed(e.clone()); }
@@ -129,10 +132,8 @@ impl Shape {
                 return Self::Mesh3D(Box::new(r));
             }
             eprintln!("[SynapsCAD] boolmesh {op:?} panicked, falling back to BSP");
-        } else {
-            if cfg!(debug_assertions) {
-                eprintln!("[DEBUG] BMesh conversion failed, using BSP for {op:?}");
-            }
+        } else if cfg!(debug_assertions) {
+            eprintln!("[DEBUG] BMesh conversion failed, using BSP for {op:?}");
         }
 
         // Fallback: csgrs BSP-tree booleans
@@ -144,6 +145,7 @@ impl Shape {
         Self::from_csg_mesh(result_csg)
     }
 
+    #[must_use]
     pub fn translate(self, x: f64, y: f64, z: f64) -> Self {
         match self {
             Self::Mesh3D(m) => Self::bmesh_transform_with_fallback(*m, |m| m.translate(x, y, z)),
@@ -159,6 +161,7 @@ impl Shape {
         }
     }
 
+    #[must_use]
     pub fn rotate(self, x: f64, y: f64, z: f64) -> Self {
         match self {
             Self::Mesh3D(m) => Self::bmesh_transform_with_fallback(*m, |m| m.rotate(x, y, z)),
@@ -174,6 +177,7 @@ impl Shape {
         }
     }
 
+    #[must_use]
     pub fn scale(self, sx: f64, sy: f64, sz: f64) -> Self {
         match self {
             Self::Mesh3D(m) => Self::bmesh_transform_with_fallback(*m, |m| m.scale(sx, sy, sz)),
@@ -189,18 +193,16 @@ impl Shape {
         }
     }
 
-    /// Try a BMesh transform; on panic fall back to CsgMesh transform.
+    /// Try a `BMesh` transform; on panic fall back to `CsgMesh` transform.
     fn bmesh_transform_with_fallback(m: BMesh<()>, f: impl FnOnce(BMesh<()>) -> BMesh<()>) -> Self {
         let csg_backup = bmesh_to_csg_mesh(&m);
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(m))) {
-            Ok(result) => Self::Mesh3D(Box::new(result)),
-            Err(_) => {
-                eprintln!("[SynapsCAD] BMesh transform panicked, falling back to CsgMesh");
-                Self::FallbackMesh(csg_backup)
-            }
-        }
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(m))).map_or_else(|_| {
+            eprintln!("[SynapsCAD] BMesh transform panicked, falling back to CsgMesh");
+            Self::FallbackMesh(csg_backup)
+        }, |result| Self::Mesh3D(Box::new(result)))
     }
 
+    #[must_use]
     pub fn mirror(self, nx: f64, ny: f64, nz: f64) -> Self {
         let len = (nx.mul_add(nx, ny.mul_add(ny, nz * nz))).sqrt();
         if len < 1e-12 {
@@ -215,6 +217,7 @@ impl Shape {
         }
     }
 
+    #[must_use]
     #[allow(dead_code)]
     pub fn center(self) -> Self {
         match self {

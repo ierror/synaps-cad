@@ -15,7 +15,7 @@ struct ProjectedTri {
     color: [f32; 3], // RGB base color for this triangle
 }
 
-/// Default palette for parts without explicit color (matches PART_PALETTE in compilation.rs).
+/// Default palette for parts without explicit color (matches `PART_PALETTE` in compilation.rs).
 const VIEW_PART_PALETTE: &[[f32; 3]] = &[
     [0.40, 0.70, 1.00],
     [1.00, 0.60, 0.40],
@@ -31,11 +31,14 @@ const VIEW_PART_PALETTE: &[[f32; 3]] = &[
     [0.55, 0.75, 0.65],
 ];
 
+#[must_use] 
 pub fn render_orthographic_views(parts: &[MeshData]) -> Vec<ViewImage> {
     render_orthographic_views_sized(parts, VIEW_SIZE)
 }
 
 /// Render orthographic + isometric views at the given pixel size.
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
 pub fn render_orthographic_views_sized(parts: &[MeshData], size: u32) -> Vec<ViewImage> {
     // Build per-part buffers with color tracking
     let mut all_pos = Vec::new();
@@ -51,7 +54,7 @@ pub fn render_orthographic_views_sized(parts: &[MeshData], size: u32) -> Vec<Vie
             .color
             .unwrap_or(VIEW_PART_PALETTE[part_idx % VIEW_PART_PALETTE.len()]);
         let num_tris = part.indices.len() / 3;
-        tri_colors.extend(std::iter::repeat(color).take(num_tris));
+        tri_colors.extend(std::iter::repeat_n(color, num_tris));
     }
 
     if all_pos.is_empty() {
@@ -88,7 +91,13 @@ pub fn render_orthographic_views_sized(parts: &[MeshData], size: u32) -> Vec<Vie
 }
 
 /// Render an isometric view using a rotated projection (looking from top-right-front).
-#[allow(clippy::similar_names, clippy::cast_possible_wrap)]
+#[allow(
+    clippy::similar_names,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 fn render_iso_view(
     positions: &[[f32; 3]],
     normals: &[[f32; 3]],
@@ -107,16 +116,16 @@ fn render_iso_view(
     let sin_x = angle_x.sin();
 
     let project = |p: &[f32; 3]| -> (f32, f32, f32) {
-        let rx = p[0] * cos_y + p[2] * sin_y;
+        let rx = p[0].mul_add(cos_y, p[2] * sin_y);
         let ry = p[1];
-        let rz = -p[0] * sin_y + p[2] * cos_y;
+        let rz = (-p[0]).mul_add(sin_y, p[2] * cos_y);
         let sx = rx;
-        let sy = ry * cos_x - rz * sin_x;
-        let r_z = ry * sin_x + rz * cos_x;
+        let sy = ry.mul_add(cos_x, -(rz * sin_x));
+        let r_z = ry.mul_add(sin_x, rz * cos_x);
         (sx, sy, r_z)
     };
 
-    let projected: Vec<(f32, f32, f32)> = positions.iter().map(|p| project(p)).collect();
+    let projected: Vec<(f32, f32, f32)> = positions.iter().map(project).collect();
 
     let (mut sx_min, mut sx_max) = (f32::INFINITY, f32::NEG_INFINITY);
     let (mut sy_min, mut sy_max) = (f32::INFINITY, f32::NEG_INFINITY);
@@ -195,9 +204,9 @@ fn render_iso_view(
                         depth_buf[idx] = depth;
                         let ndotl = dot(tri.normal, light_dir).abs();
                         let shade = 0.8f32.mul_add(ndotl, 0.2);
-                        let r = (tri.color[0] * 255.0 * shade).min(255.0) as u8;
-                        let g = (tri.color[1] * 255.0 * shade).min(255.0) as u8;
-                        let b = (tri.color[2] * 255.0 * shade).min(255.0) as u8;
+                        let r = (tri.color[0] * 255.0 * shade).clamp(0.0, 255.0) as u8;
+                        let g = (tri.color[1] * 255.0 * shade).clamp(0.0, 255.0) as u8;
+                        let b = (tri.color[2] * 255.0 * shade).clamp(0.0, 255.0) as u8;
                         pixels[idx] = [r, g, b];
                     }
                 }
@@ -225,7 +234,13 @@ fn render_iso_view(
     base64::engine::general_purpose::STANDARD.encode(&png_bytes)
 }
 
-#[allow(clippy::similar_names, clippy::cast_possible_wrap)]
+#[allow(
+    clippy::similar_names,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 fn render_single_view(
     positions: &[[f32; 3]],
     normals: &[[f32; 3]],
@@ -336,9 +351,9 @@ fn render_single_view(
                         // Diffuse shading with part color
                         let ndotl = dot(tri.normal, light_dir).abs();
                         let shade = 0.8f32.mul_add(ndotl, 0.2); // ambient + diffuse
-                        let r = (tri.color[0] * 255.0 * shade).min(255.0) as u8;
-                        let g = (tri.color[1] * 255.0 * shade).min(255.0) as u8;
-                        let b = (tri.color[2] * 255.0 * shade).min(255.0) as u8;
+                        let r = (tri.color[0] * 255.0 * shade).clamp(0.0, 255.0) as u8;
+                        let g = (tri.color[1] * 255.0 * shade).clamp(0.0, 255.0) as u8;
+                        let b = (tri.color[2] * 255.0 * shade).clamp(0.0, 255.0) as u8;
                         pixels[idx] = [r, g, b];
                     }
                 }

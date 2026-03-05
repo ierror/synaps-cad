@@ -23,13 +23,9 @@ pub struct ImagePreviewState {
 
 /// Whether the AI settings dialog window is open.
 #[derive(Resource)]
+#[derive(Default)]
 pub struct SettingsDialogOpen(pub bool);
 
-impl Default for SettingsDialogOpen {
-    fn default() -> Self {
-        Self(false)
-    }
-}
 
 #[derive(Resource, Default)]
 pub struct CheatsheetOpen(pub bool);

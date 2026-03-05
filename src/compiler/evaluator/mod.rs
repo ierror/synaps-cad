@@ -42,7 +42,14 @@ pub struct Evaluator {
     pub warnings: Vec<String>,
 }
 
+impl Default for Evaluator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Evaluator {
+    #[must_use] 
     pub fn new() -> Self {
         let mut variables = HashMap::new();
         variables.insert("$fn".into(), Value::Number(0.0));
@@ -62,12 +69,14 @@ impl Evaluator {
     }
 
     /// Resolve `$fn` from either explicit args or global variable.
-    /// Uses OpenSCAD logic: if `$fn` > 0, use it.
+    /// Uses `OpenSCAD` logic: if `$fn` > 0, use it.
     /// Otherwise, use `$fa` (min angle) and `$fs` (min size) based on radius `r`.
+    #[must_use] 
     pub fn resolve_fn(&self, args: &[(Option<String>, Value)]) -> usize {
         self.resolve_fn_with_radius(args, None)
     }
 
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::similar_names)]
     pub fn resolve_fn_with_radius(&self, args: &[(Option<String>, Value)], r: Option<f64>) -> usize {
         let fn_val = Self::get_named_arg(args, "$fn")
             .and_then(Value::as_number)
@@ -85,18 +94,18 @@ impl Evaluator {
         let fa = fa.max(0.01);
         let fs = fs.max(0.01);
 
-        let fragments = if let Some(radius) = r {
-            if radius.abs() < 1e-9 {
-                3.0
-            } else {
-                let from_fa = 360.0 / fa;
-                let from_fs = (radius * 2.0 * std::f64::consts::PI) / fs;
-                f64::min(from_fa, from_fs)
-            }
-        } else {
-            // If radius is unknown, we can only use $fa
-            360.0 / fa
-        };
+        let fragments = r.map_or_else(
+            || 360.0 / fa,
+            |radius| {
+                if radius.abs() < 1e-9 {
+                    3.0
+                } else {
+                    let from_fa = 360.0 / fa;
+                    let from_fs = (radius * 2.0 * std::f64::consts::PI) / fs;
+                    f64::min(from_fa, from_fs)
+                }
+            },
+        );
 
         f64::ceil(fragments.max(5.0)) as usize
     }
@@ -390,6 +399,7 @@ impl Evaluator {
         self.depth -= 1;
     }
 
+    #[allow(clippy::missing_panics_doc)]
     pub fn eval_user_module(
         &mut self,
         user_mod: &UserModule,
@@ -459,6 +469,7 @@ impl Evaluator {
         result
     }
 
+    #[allow(clippy::missing_panics_doc)]
     pub fn eval_module_instantiation_dispatch(
         &mut self,
         name: &str,
@@ -562,12 +573,14 @@ impl Evaluator {
             .collect()
     }
 
+    #[must_use] 
     pub fn get_named_arg<'a>(args: &'a [(Option<String>, Value)], name: &str) -> Option<&'a Value> {
         args.iter()
             .find(|(n, _)| n.as_deref() == Some(name))
             .map(|(_, v)| v)
     }
 
+    #[must_use] 
     pub fn get_positional_arg(args: &[(Option<String>, Value)], idx: usize) -> Option<&Value> {
         let mut pos = 0;
         for (name, val) in args {
@@ -581,6 +594,7 @@ impl Evaluator {
         None
     }
 
+    #[must_use] 
     pub fn get_arg<'a>(
         args: &'a [(Option<String>, Value)],
         name: &str,
@@ -602,6 +616,7 @@ impl Evaluator {
         Self::get_arg(args, name, pos).map_or(default, Value::as_bool)
     }
 
+    #[allow(clippy::missing_panics_doc)]
     pub fn eval_children(&mut self, children: &[Statement]) -> Vec<Shape> {
         let mut result = Vec::new();
         for stmt in children {
@@ -619,6 +634,7 @@ impl Evaluator {
         result
     }
 
+    #[allow(clippy::missing_panics_doc)]
     pub fn eval_passthrough_children(&mut self, children: &[Statement]) -> Option<Shape> {
         let child_shapes = self.eval_children(children);
         if child_shapes.is_empty() {

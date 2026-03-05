@@ -92,6 +92,7 @@ impl Evaluator {
                 let idx = self.eval_expr(index);
                 match (&base, &idx) {
                     (Value::List(l), Value::Number(i)) => {
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                         let idx = *i as usize;
                         l.get(idx).cloned().unwrap_or(Value::Undef)
                     }
@@ -326,7 +327,8 @@ impl Evaluator {
     #[allow(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
+        clippy::cast_sign_loss,
+        clippy::missing_panics_doc
     )]
     pub fn eval_builtin_function(&mut self, name: &str, args: &[Value]) -> Value {
         match name {

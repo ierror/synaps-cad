@@ -3,7 +3,7 @@ pub struct MeshData {
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
     pub indices: Vec<u32>,
-    /// Optional color set via `color()` in the OpenSCAD code.
+    /// Optional color set via `color()` in the `OpenSCAD` code.
     pub color: Option<[f32; 3]>,
 }
 

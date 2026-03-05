@@ -88,13 +88,13 @@ pub fn env_var_for_adapter(adapter: &str) -> Option<&'static str> {
 pub struct AiConfig {
     pub adapter_name: String,
     pub model_name: String,
-    /// Per-provider API keys (adapter_name → key).
+    /// Per-provider API keys (`adapter_name` → key).
     pub api_keys: std::collections::HashMap<String, String>,
-    /// Per-provider last-used model (adapter_name → model_name).
+    /// Per-provider last-used model (`adapter_name` → `model_name`).
     pub model_per_provider: std::collections::HashMap<String, String>,
     pub system_prompt: String,
     pub temperature: f64,
-    /// Maximum automatic verification rounds (u32::MAX = unlimited).
+    /// Maximum automatic verification rounds (`u32::MAX` = unlimited).
     pub max_verification_rounds: u32,
     pub extended_thinking: bool,
 }
@@ -104,8 +104,7 @@ impl AiConfig {
     pub fn api_key(&self) -> &str {
         self.api_keys
             .get(&self.adapter_name)
-            .map(String::as_str)
-            .unwrap_or("")
+            .map_or("", String::as_str)
     }
 
     /// Get a mutable reference to the API key for the currently selected adapter.
@@ -320,14 +319,8 @@ fn fetch_models_system(
                         } else {
                             available.needs_configuration = true;
                         }
-                    } else if !ai_config.model_name.is_empty()
-                        && !models.contains(&ai_config.model_name)
-                        && available.last_adapter != ai_config.adapter_name
-                    {
-                        available.needs_configuration = true;
-                    } else {
-                        available.needs_configuration = false;
-                    }
+                    } else { available.needs_configuration = !ai_config.model_name.is_empty()
+                        && !models.contains(&ai_config.model_name) && available.last_adapter != ai_config.adapter_name; }
                     available.models = models;
                 }
                 Err(e) => {
@@ -353,7 +346,7 @@ fn fetch_models_system(
         }
         ai_config.model_name.clear();
         available.last_adapter.clone_from(&ai_config.adapter_name);
-        available.last_api_key = current_key.clone();
+        available.last_api_key.clone_from(&current_key);
         available.loading = true;
 
         let adapter_name = ai_config.adapter_name.clone();
@@ -494,6 +487,7 @@ async fn run_ai_stream(
     part_context: String,
     tx: mpsc::Sender<AiStreamChunk>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use bevy::tasks::futures_lite::StreamExt;
     use genai::Client;
     use genai::chat::{
         ChatMessage as GenaiMessage, ChatOptions, ChatRequest, ChatStreamEvent, ContentPart,
@@ -558,11 +552,10 @@ async fn run_ai_stream(
 
     // Attach orthographic views to the last user message if available
     if !views.is_empty() {
-        let view_intro = if let Some(ref name) = active_view_name {
-            format!("The user is CURRENTLY SEEING the following $view \"{name}\" in their viewport. Here are five orthographic/isometric views of it:")
-        } else {
-            "Current 3D model (active view) rendered from five orthographic/isometric views:".to_string()
-        };
+        let view_intro = active_view_name.as_ref().map_or_else(
+            || "Current 3D model (active view) rendered from five orthographic/isometric views:".to_string(),
+            |name| format!("The user is CURRENTLY SEEING the following $view \"{name}\" in their viewport. Here are five orthographic/isometric views of it:"),
+        );
         let mut parts = vec![ContentPart::from_text(view_intro)];
         for (label, base64_png) in views {
             if !base64_png.is_empty() {
@@ -661,7 +654,6 @@ async fn run_ai_stream(
     let mut full_content = String::new();
     let mut full_reasoning: Option<String> = None;
 
-    use bevy::tasks::futures_lite::StreamExt;
     while let Some(event) = stream.next().await {
         match event {
             Ok(ChatStreamEvent::Chunk(chunk)) => {
@@ -794,7 +786,7 @@ fn ai_receive_system(
                     .is_some_and(|m| m.role == "assistant" && !m.is_error);
                 if replace {
                     let last = chat_state.messages.last_mut().unwrap();
-                    last.content = content.clone();
+                    last.content.clone_from(&content);
                     last.thinking = reasoning;
                 }
                 chat_state.is_streaming = false;
@@ -934,19 +926,19 @@ fn ai_verify_system(
 
 /// Build part context describing the compiled parts (@1, @2, ...) for the AI.
 fn build_part_context(part_query: &Query<&PartLabel>) -> String {
+    use std::fmt::Write;
     let mut parts: Vec<&PartLabel> = part_query.iter().collect();
     if parts.is_empty() {
         return String::new();
     }
     parts.sort_by_key(|p| p.index);
 
-    use std::fmt::Write;
     let mut ctx = String::from("Compiled parts:\n");
     for part in &parts {
         let [r, g, b] = part.color;
-        let _ = write!(
+        let _ = writeln!(
             ctx,
-            "  {}: color=({:.2}, {:.2}, {:.2})\n",
+            "  {}: color=({:.2}, {:.2}, {:.2})",
             part.label, r, g, b
         );
     }
@@ -990,22 +982,14 @@ fn parse_search_replace(text: &str) -> Vec<(String, String)> {
         };
 
         // Find the separator ===
-        let separator = if let Some(sep) = after_newline.find("\n===\n") {
-            sep
-        } else {
-            break;
-        };
+        let Some(separator) = after_newline.find("\n===\n") else { break; };
 
         let old_str = &after_newline[..separator];
 
         let after_sep = &after_newline[separator + "\n===\n".len()..];
 
         // Find closing >>>
-        let end = if let Some(e) = after_sep.find("\n>>>") {
-            e
-        } else {
-            break;
-        };
+        let Some(end) = after_sep.find("\n>>>") else { break; };
 
         let new_str = &after_sep[..end];
 
@@ -1043,8 +1027,8 @@ fn apply_search_replace(code: &str, replacements: &[(String, String)]) -> Result
     Ok(result)
 }
 
-/// Extracts OpenSCAD code from AI response.
-/// Supports `\`\`\`synapscad` code blocks (ignores any `:suffix`).
+/// Extracts `OpenSCAD` code from AI response.
+/// Supports ` ```synapscad ` code blocks (ignores any `:suffix`).
 fn extract_openscad_code(text: &str) -> Option<String> {
     let marker = "```synapscad";
     let start = text.find(marker)?;

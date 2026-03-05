@@ -11,7 +11,7 @@ pub enum ExportFormat {
 }
 
 impl ExportFormat {
-    pub fn extension(self) -> &'static str {
+    pub const fn extension(self) -> &'static str {
         match self {
             Self::Stl => "stl",
             Self::Obj => "obj",
@@ -19,7 +19,7 @@ impl ExportFormat {
         }
     }
 
-    pub fn label(self) -> &'static str {
+    pub const fn label(self) -> &'static str {
         match self {
             Self::Stl => "STL",
             Self::Obj => "OBJ (with colors)",
@@ -45,6 +45,7 @@ pub fn export_parts(
 }
 
 /// Binary STL export (no colors).
+#[allow(clippy::cast_possible_truncation, clippy::tuple_array_conversions)]
 fn export_stl(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
     let mut file =
         std::fs::File::create(path).map_err(|e| format!("Failed to create file: {e}"))?;
@@ -71,11 +72,11 @@ fn export_stl(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
             let u = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
             let v = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
             let n = [
-                u[1] * v[2] - u[2] * v[1],
-                u[2] * v[0] - u[0] * v[2],
-                u[0] * v[1] - u[1] * v[0],
+                u[1].mul_add(v[2], -(u[2] * v[1])),
+                u[2].mul_add(v[0], -(u[0] * v[2])),
+                u[0].mul_add(v[1], -(u[1] * v[0])),
             ];
-            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            let len = n[2].mul_add(n[2], n[0].mul_add(n[0], n[1] * n[1])).sqrt();
             let normal = if len > 0.0 {
                 [n[0] / len, n[1] / len, n[2] / len]
             } else {
@@ -88,8 +89,8 @@ fn export_stl(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
                     .map_err(|e| e.to_string())?;
             }
             // Vertices (3 × 3 × f32)
-            for vtx in &[v0, v1, v2] {
-                for &c in vtx {
+            for vtx in [v0, v1, v2] {
+                for c in vtx {
                     file.write_all(&c.to_le_bytes())
                         .map_err(|e| e.to_string())?;
                 }
@@ -162,6 +163,7 @@ fn export_obj(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
 }
 
 /// 3MF export (with per-part colors via `ColorGroup`).
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
     use lib3mf::{BuildItem, Mesh, Model, Object, Triangle, Vertex};
 
@@ -175,9 +177,9 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
     for part in parts {
         if let Some(c) = part.color {
             let rgba = (
-                (c[0] * 255.0).round() as u8,
-                (c[1] * 255.0).round() as u8,
-                (c[2] * 255.0).round() as u8,
+                (c[0] * 255.0).clamp(0.0, 255.0) as u8,
+                (c[1] * 255.0).clamp(0.0, 255.0) as u8,
+                (c[2] * 255.0).clamp(0.0, 255.0) as u8,
                 255u8,
             );
             let idx = colors
@@ -197,7 +199,7 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
     if !colors.is_empty() {
         let cg = lib3mf::ColorGroup {
             id: color_group_id,
-            colors: colors.clone(),
+            colors,
             parse_order: 0,
         };
         model.resources.color_groups.push(cg);
