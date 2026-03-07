@@ -433,8 +433,7 @@ fn render_settings_dialog(ctx: &egui::Context, settings_open: &mut SettingsDialo
             ui.label("Provider:"); let prev = ai_config.adapter_name.clone();
             egui::ComboBox::from_id_salt("ai_adapter_select").selected_text(&ai_config.adapter_name).show_ui(ui, |ui| {
                 for &adapter in ADAPTER_NAMES {
-                    let configured = env_var_for_adapter(adapter).is_none() || env_var_for_adapter(adapter).and_then(|n| std::env::var(n).ok()).is_some_and(|v| !v.is_empty()) || ai_config.api_keys.get(adapter).is_some_and(|k| !k.is_empty());
-                    ui.add_enabled_ui(configured, |ui| { ui.selectable_value(&mut ai_config.adapter_name, adapter.to_string(), adapter); });
+                    ui.selectable_value(&mut ai_config.adapter_name, adapter.to_string(), adapter);
                 }
             });
             if ai_config.adapter_name != prev {
@@ -455,7 +454,11 @@ fn render_settings_dialog(ctx: &egui::Context, settings_open: &mut SettingsDialo
                 if ai_config.model_name != prev_model && available_models.models.contains(&ai_config.model_name) { available_models.needs_configuration = false; }
             } else { ui.colored_label(egui::Color32::from_rgb(255, 180, 50), "⚠ Set API key first"); }
         });
-        if let Some(ref err) = available_models.error { ui.colored_label(egui::Color32::from_rgb(255, 100, 100), format!("⚠ {err}")); }
+        if let Some(ref err) = available_models.error {
+            egui::ScrollArea::vertical().id_salt("settings_err_scroll").max_height(60.0).show(ui, |ui| {
+                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), format!("⚠ {err}"));
+            });
+        }
         ui.horizontal(|ui| {
             ui.label("API Key:"); let env_var = env_var_for_adapter(&ai_config.adapter_name);
             let env_set = env_var.and_then(|n| std::env::var(n).ok()).is_some_and(|v| !v.is_empty());
