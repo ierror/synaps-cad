@@ -466,6 +466,9 @@ fn render_settings_dialog(ctx: &egui::Context, settings_open: &mut SettingsDialo
             else { let key = ai_config.api_key_mut(); ui.add(egui::TextEdit::singleline(key).password(true).hint_text(if env_set { "Override env var" } else { "Enter API key" })); }
         });
         ui.horizontal(|ui| { ui.label("Temperature:"); ui.add(egui::Slider::new(&mut ai_config.temperature, 0.0..=2.0).step_by(0.1)); });
-        ui.label("System Prompt:"); ui.add(egui::TextEdit::multiline(&mut ai_config.system_prompt.clone()).desired_width(ui.available_width()).desired_rows(4).interactive(false));
+        ui.label("System Prompt:");
+        egui::ScrollArea::vertical().id_salt("settings_prompt_scroll").max_height(120.0).show(ui, |ui| {
+            ui.add(egui::TextEdit::multiline(&mut ai_config.system_prompt.clone()).desired_width(ui.available_width()).desired_rows(4).interactive(false));
+        });
     });
 }
