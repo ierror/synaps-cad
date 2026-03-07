@@ -271,6 +271,7 @@ pub fn clipboard_image_as_chat_image() -> Option<crate::plugins::ai_chat::ChatIm
     Some(crate::plugins::ai_chat::ChatImage { filename, mime_type: "image/png".to_string(), base64_data })
 }
 
+#[allow(clippy::missing_const_for_fn)]
 fn clipboard_file_path() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "macos")]
     {
