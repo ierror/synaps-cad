@@ -10,11 +10,80 @@ pub fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> 
         matches!(lang.to_lowercase().as_str(), "synapscad" | "openscad" | "scad")
     };
 
+    let find_bg    = egui::Color32::from_rgb(46, 24, 24);
+    let replace_bg = egui::Color32::from_rgb(20, 42, 24);
+    let find_label_color    = egui::Color32::from_rgb(200, 100, 100);
+    let replace_label_color = egui::Color32::from_rgb(100, 180, 100);
+
     let mut last_resp: Option<egui::Response> = None;
     let mut remaining = content;
 
     while !remaining.is_empty() {
-        if let Some(fence_start) = remaining.find("```") {
+        let replace_pos = remaining.find("<<<REPLACE");
+        let fence_pos   = remaining.find("```");
+
+        let handle_replace = replace_pos.is_some_and(|r| fence_pos.is_none_or(|f| r <= f));
+
+        if handle_replace {
+            let rp = replace_pos.unwrap();
+            let before = &remaining[..rp];
+            if !before.is_empty() {
+                render_markdown_text(ui, before, is_error);
+            }
+
+            let after_marker = &remaining[rp + "<<<REPLACE".len()..];
+            // skip optional text/whitespace on same line as <<<REPLACE
+            let after_newline = if let Some(nl) = after_marker.find('\n') {
+                &after_marker[nl + 1..]
+            } else {
+                remaining = "";
+                continue;
+            };
+            let Some(sep) = after_newline.find("\n===\n") else { remaining = ""; continue; };
+            let search_text  = &after_newline[..sep];
+            let after_sep    = &after_newline[sep + "\n===\n".len()..];
+            let Some(end)    = after_sep.find("\n>>>") else { remaining = ""; continue; };
+            let replace_text = &after_sep[..end];
+
+            let r = egui::Frame::new()
+                .fill(code_bg)
+                .corner_radius(egui::CornerRadius::same(4))
+                .inner_margin(egui::Margin::same(6))
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new("edit").small().color(lang_color));
+                    egui::Frame::new()
+                        .fill(find_bg)
+                        .corner_radius(egui::CornerRadius::same(3))
+                        .inner_margin(egui::Margin::same(4))
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new("find").small().color(find_label_color));
+                            let font_id = egui::FontId::monospace(12.0);
+                            ui.label(highlight_openscad(search_text.trim_end(), font_id));
+                        });
+                    egui::Frame::new()
+                        .fill(replace_bg)
+                        .corner_radius(egui::CornerRadius::same(3))
+                        .inner_margin(egui::Margin::same(4))
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new("replace").small().color(replace_label_color));
+                            if replace_text.trim().is_empty() {
+                                ui.label(egui::RichText::new("(delete)").small().italics().color(lang_color));
+                            } else {
+                                let font_id = egui::FontId::monospace(12.0);
+                                ui.label(highlight_openscad(replace_text.trim_end(), font_id));
+                            }
+                        });
+                });
+            last_resp = Some(r.response);
+
+            remaining = &after_sep[end + "\n>>>".len()..];
+            if remaining.starts_with('\n') {
+                remaining = &remaining[1..];
+            }
+            continue;
+        }
+
+        if let Some(fence_start) = fence_pos.filter(|_| !handle_replace) {
             let before = &remaining[..fence_start];
             if !before.is_empty() {
                 render_markdown_text(ui, before, is_error);

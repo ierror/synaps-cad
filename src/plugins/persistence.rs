@@ -39,7 +39,6 @@ struct PersistentData {
     chat_messages: Vec<SerializableChatMessage>,
     adapter_name: String,
     model_name: String,
-    system_prompt: String,
     temperature: f64,
     editor_code: String,
     #[serde(default = "default_verification_rounds")]
@@ -111,12 +110,6 @@ fn load_session_system(
 
     ai_config.adapter_name = saved.adapter_name;
     ai_config.model_name = saved.model_name;
-    // Reset system prompt to default if it contains stale instructions
-    if saved.system_prompt.contains("```openscad") || saved.system_prompt.contains("synapscad:") {
-        eprintln!("[SynapsCAD] Resetting stale system prompt to default");
-    } else {
-        ai_config.system_prompt = saved.system_prompt;
-    }
     ai_config.temperature = saved.temperature;
     ai_config.max_verification_rounds = saved.max_verification_rounds;
     ai_config.api_keys = saved.api_keys;
@@ -279,7 +272,6 @@ fn save_session(ai_config: &AiConfig, chat_state: &ChatState, scad_code: &ScadCo
             .collect(),
         adapter_name: ai_config.adapter_name.clone(),
         model_name: ai_config.model_name.clone(),
-        system_prompt: ai_config.system_prompt.clone(),
         temperature: ai_config.temperature,
         editor_code: scad_code.text.clone(),
         max_verification_rounds: ai_config.max_verification_rounds,
