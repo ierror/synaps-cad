@@ -3,6 +3,24 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.7.2] - 2026-03-07
+
+### Added
+
+- **Find/Replace Edit Blocks** — the AI can now respond with `<<<REPLACE` diff blocks that render as a visual find/replace UI in the chat, making targeted code edits easier to review.
+
+### Fixed
+
+- **Settings Dialog — Provider Dropdown** — all providers are now always selectable in the settings dialog regardless of configuration state. Graying out unconfigured providers is kept only in the main toolbar dropdown.
+- **Settings Dialog — Error Display** — API/model errors in the settings dialog are now shown in a fixed-height scrollable area instead of expanding the dialog height indefinitely.
+- **Settings Dialog — System Prompt** — the system prompt field is now scrollable with a fixed height instead of expanding to show all content.
+
+### Internal
+
+- Added CI workflow for automated testing and Clippy linting.
+- Enhanced AI assistant guidelines for targeted edits and large rewrites.
+
+
 ## [0.7.1] - 2026-03-04
 
 ### Changed
