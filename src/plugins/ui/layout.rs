@@ -365,7 +365,16 @@ fn render_code_header(ui: &mut egui::Ui, scad_code: &mut ScadCode, chat_state: &
     ui.horizontal_wrapped(|ui| {
         ui.heading("Code");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.add_enabled(!compilation_state.is_compiling, egui::Button::new(if compilation_state.is_compiling { "Compiling..." } else { "Compile" })).clicked() { scad_code.dirty = true; }
+            if compilation_state.is_compiling {
+                if ui.button(egui::RichText::new("⏹ Cancel").color(egui::Color32::from_rgb(255, 100, 100))).clicked() {
+                    if let Some(cancel) = &compilation_state.cancel_signal {
+                        cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+            } else if ui.button("Compile").clicked() {
+                scad_code.dirty = true;
+            }
+
             let fn_label = format!("$fn {}", scad_code.fn_value);
             egui::ComboBox::from_id_salt("fn_select")
                 .selected_text(&fn_label)

@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
-use std::sync::{Mutex, mpsc};
+use std::sync::{Mutex, mpsc, Arc};
+use std::sync::atomic::AtomicBool;
 
 use super::ai_chat::ChatMessage;
 use super::camera::OrbitCamera;
@@ -84,6 +85,7 @@ pub enum CompilationResult {
         warnings: Vec<String>,
     },
     Error(String),
+    Canceled,
 }
 
 #[derive(Resource)]
@@ -94,6 +96,8 @@ pub struct CompilationState {
     /// This is set when the user explicitly requests a fresh render (Clear, Load)
     /// but NOT on iterative edits/updates.
     pub should_zoom: bool,
+    /// Cancellation signal for the running compilation.
+    pub cancel_signal: Option<Arc<AtomicBool>>,
 }
 
 impl Default for CompilationState {
@@ -102,6 +106,7 @@ impl Default for CompilationState {
             is_compiling: false,
             result_receiver: None,
             should_zoom: true, // Default to true so first load/compile zooms
+            cancel_signal: None,
         }
     }
 }
@@ -155,19 +160,22 @@ fn trigger_compilation_system(
     let (tx, rx) = mpsc::channel();
     compilation_state.result_receiver = Some(Mutex::new(rx));
 
+    let cancel = Arc::new(AtomicBool::new(false));
+    compilation_state.cancel_signal = Some(cancel.clone());
+
     // Use a larger stack (64 MB) for the compilation thread because complex
     // OpenSCAD models with deep nesting (hull, difference, nested modules)
     // can overflow the default 8 MB stack.
     std::thread::Builder::new()
         .stack_size(64 * 1024 * 1024)
         .spawn(move || {
-            let result = compile_openscad(&code, fn_value);
+            let result = compile_openscad(&code, fn_value, Some(cancel));
             let _ = tx.send(result);
         })
         .expect("Failed to spawn compilation thread");
 }
 
-fn compile_openscad(code: &str, fn_value: u32) -> CompilationResult {
+fn compile_openscad(code: &str, fn_value: u32, cancel: Option<Arc<AtomicBool>>) -> CompilationResult {
     use super::code_editor::{detect_views, set_active_view};
 
     // Empty code → clear the viewport (no error, just zero parts)
@@ -184,8 +192,9 @@ fn compile_openscad(code: &str, fn_value: u32) -> CompilationResult {
     eprintln!("[SynapsCAD] Compiling (fn={fn_value})...");
 
     // Catch panics from dependencies (e.g. spade triangulation)
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        compiler::compile_scad_code(code, fn_value)
+    let cancel_clone = cancel.clone();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        compiler::compile_scad_code(code, fn_value, cancel_clone)
     }));
 
     let result = match result {
@@ -269,6 +278,10 @@ fn compile_openscad(code: &str, fn_value: u32) -> CompilationResult {
                 warnings,
             }
         }
+        compiler::CompilationResult::Canceled => {
+            eprintln!("[SynapsCAD] Compilation canceled");
+            CompilationResult::Canceled
+        }
         compiler::CompilationResult::Error(e) => {
             eprintln!("[SynapsCAD] Compilation error: {e}");
             CompilationResult::Error(e)
@@ -308,6 +321,7 @@ fn poll_compilation_system(
 
     compilation_state.is_compiling = false;
     compilation_state.result_receiver = None;
+    compilation_state.cancel_signal = None;
 
     match result {
         CompilationResult::Success {
@@ -402,6 +416,12 @@ fn poll_compilation_system(
                 auto_generated: true,
                 is_error: true,
             });
+        }
+        CompilationResult::Canceled => {
+            // Reset verification loop if it was waiting for this compilation
+            if chat_state.verification == super::ai_chat::VerificationState::WaitingForCompilation {
+                chat_state.verification = super::ai_chat::VerificationState::Idle;
+            }
         }
     }
 }

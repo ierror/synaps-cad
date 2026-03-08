@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use openscad_rs::ast::{Argument, Expr, Parameter, SourceFile, Statement};
 
 use super::geometry::{Shape, BoolOp, TransformKind};
@@ -40,6 +42,8 @@ pub struct Evaluator {
     pub color_stack: Vec<[f32; 3]>,
     /// Warnings collected during evaluation (shown to the user after compilation).
     pub warnings: Vec<String>,
+    /// Optional cancellation signal.
+    pub cancel: Option<Arc<AtomicBool>>,
 }
 
 impl Default for Evaluator {
@@ -65,7 +69,13 @@ impl Evaluator {
             depth: 0,
             color_stack: Vec::new(),
             warnings: Vec::new(),
+            cancel: None,
         }
+    }
+
+    /// Check if compilation has been canceled.
+    pub fn is_canceled(&self) -> bool {
+        self.cancel.as_ref().map_or(false, |c| c.load(Ordering::Relaxed))
     }
 
     /// Resolve `$fn` from either explicit args or global variable.
@@ -121,6 +131,9 @@ impl Evaluator {
         // Second pass: evaluate geometry with color tracking
         let mut shapes = Vec::new();
         for stmt in &source_file.statements {
+            if self.is_canceled() {
+                break;
+            }
             self.eval_statement(stmt, &mut shapes);
         }
         shapes
@@ -163,6 +176,9 @@ impl Evaluator {
     }
 
     pub fn eval_statement(&mut self, stmt: &Statement, shapes: &mut Vec<(Shape, Option<[f32; 3]>)>) {
+        if self.is_canceled() {
+            return;
+        }
         match stmt {
             Statement::ModuleInstantiation {
                 name,
@@ -262,6 +278,9 @@ impl Evaluator {
 
         let mut results = Vec::new();
         for item in items {
+            if self.is_canceled() {
+                break;
+            }
             self.variables.insert(name.clone(), item);
             results.extend(self.eval_for_nested(loop_vars, depth + 1, children));
         }
@@ -300,6 +319,9 @@ impl Evaluator {
     pub fn eval_statement_list(&mut self, stmts: &[Statement]) -> Vec<(Shape, Option<[f32; 3]>)> {
         let mut shapes = Vec::new();
         for stmt in stmts {
+            if self.is_canceled() {
+                break;
+            }
             self.eval_statement(stmt, &mut shapes);
         }
         shapes
@@ -620,6 +642,9 @@ impl Evaluator {
     pub fn eval_children(&mut self, children: &[Statement]) -> Vec<Shape> {
         let mut result = Vec::new();
         for stmt in children {
+            if self.is_canceled() {
+                break;
+            }
             let mut shapes = Vec::new();
             self.eval_statement(stmt, &mut shapes);
             if !shapes.is_empty() {
