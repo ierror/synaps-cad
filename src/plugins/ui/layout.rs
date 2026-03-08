@@ -416,41 +416,10 @@ fn render_code_header(ui: &mut egui::Ui, scad_code: &mut ScadCode, chat_state: &
     ui.horizontal(|ui| {
         ui.heading("Code");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // Compile/Cancel
-            if compilation_state.is_compiling {
-                if ui.button(egui::RichText::new("⏹ Cancel").color(egui::Color32::from_rgb(255, 100, 100))).clicked()
-                    && let Some(cancel) = &compilation_state.cancel_signal
-                {
-                    cancel.store(true, std::sync::atomic::Ordering::Relaxed);
-                }
-            } else if ui.button("Compile").clicked() {
-                scad_code.dirty = true;
-            }
+            // In RTL layout first item = rightmost, last item = leftmost.
+            // Compile/Cancel is last so it is leftmost and always visible on narrow panels.
 
-            // $fn selector
-            let fn_label = format!("$fn {}", scad_code.fn_value);
-            egui::ComboBox::from_id_salt("fn_select")
-                .selected_text(&fn_label)
-                .width(64.0)
-                .show_ui(ui, |ui| {
-                    for &v in &[8u32, 12, 16, 24, 32, 48, 64, 96, 128, 256] {
-                        if ui.selectable_value(&mut scad_code.fn_value, v, v.to_string()).changed() {
-                            scad_code.dirty = true;
-                        }
-                    }
-                });
-
-            // Clear
-            if ui.button("🗑").on_hover_text("Clear code & chat").clicked() {
-                scad_code.text.clear();
-                scad_code.dirty = true;
-                compilation_state.should_zoom = true;
-                chat_state.session_start = chat_state.messages.len();
-                chat_state.history_index = None;
-                chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle;
-            }
-
-            // Export
+            // Export (rightmost)
             if export_state.receiver.is_some() {
                 ui.spinner();
             } else {
@@ -498,6 +467,40 @@ fn render_code_header(ui: &mut egui::Ui, scad_code: &mut ScadCode, chat_state: &
                         ui.memory_mut(bevy_egui::egui::Memory::close_popup);
                     }
                 }
+            }
+
+            // Clear
+            if ui.button("🗑").on_hover_text("Clear code & chat").clicked() {
+                scad_code.text.clear();
+                scad_code.dirty = true;
+                compilation_state.should_zoom = true;
+                chat_state.session_start = chat_state.messages.len();
+                chat_state.history_index = None;
+                chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle;
+            }
+
+            // $fn selector
+            let fn_label = format!("$fn {}", scad_code.fn_value);
+            egui::ComboBox::from_id_salt("fn_select")
+                .selected_text(&fn_label)
+                .width(64.0)
+                .show_ui(ui, |ui| {
+                    for &v in &[8u32, 12, 16, 24, 32, 48, 64, 96, 128, 256] {
+                        if ui.selectable_value(&mut scad_code.fn_value, v, v.to_string()).changed() {
+                            scad_code.dirty = true;
+                        }
+                    }
+                });
+
+            // Compile/Cancel (leftmost — always visible on narrow panels)
+            if compilation_state.is_compiling {
+                if ui.button(egui::RichText::new("⏹ Cancel").color(egui::Color32::from_rgb(255, 100, 100))).clicked()
+                    && let Some(cancel) = &compilation_state.cancel_signal
+                {
+                    cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            } else if ui.button("Compile").clicked() {
+                scad_code.dirty = true;
             }
         });
     });
