@@ -117,39 +117,90 @@ fn render_error_banner(ui: &mut egui::Ui, app_errors: &mut AppErrors) {
 }
 
 fn render_ai_assistant_header(ui: &mut egui::Ui, chat_state: &mut ChatState, ai_config: &mut AiConfig, available_models: &mut AvailableModels, settings_open: &mut SettingsDialogOpen) {
-    ui.horizontal_wrapped(|ui| {
-        ui.heading("AI Assistant");
+    let is_narrow = ui.available_width() < 420.0;
+
+    // Row 1: heading + settings/clear buttons (always visible)
+    ui.horizontal(|ui| {
+        ui.heading("AI");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button(if available_models.needs_configuration { "⚙ ⚠" } else { "⚙" }).clicked() { settings_open.0 = !settings_open.0; }
-            if ui.button("🗑").clicked() {
+            // Clear chat button
+            if ui.button("🗑").on_hover_text("Clear chat history").clicked() {
                 chat_state.session_start = chat_state.messages.len();
-                chat_state.history_index = None; chat_state.pending_images.clear();
+                chat_state.history_index = None;
+                chat_state.pending_images.clear();
             }
-
-            let selected_label = if ai_config.max_verification_rounds == u32::MAX { "∞".into() } else { ai_config.max_verification_rounds.to_string() };
-            egui::ComboBox::from_id_salt("verify_rounds_main").selected_text(selected_label).width(32.0).show_ui(ui, |ui| {
-                for &n in VERIFICATION_ROUND_CHOICES {
-                    let label = if n == u32::MAX { "∞".into() } else { n.to_string() };
-                    ui.selectable_value(&mut ai_config.max_verification_rounds, n, label);
-                }
-            });
-            ui.label(egui::RichText::new("Verify").small());
-            ui.checkbox(&mut ai_config.extended_thinking, "").on_hover_text("Extended Thinking");
-            ui.label(egui::RichText::new("extended").small()).on_hover_text("Extended Thinking");
-
+            // Verify rounds
+            let selected_label = if ai_config.max_verification_rounds == u32::MAX {
+                "∞".into()
+            } else {
+                ai_config.max_verification_rounds.to_string()
+            };
+            egui::ComboBox::from_id_salt("verify_rounds_main")
+                .selected_text(selected_label)
+                .width(32.0)
+                .show_ui(ui, |ui| {
+                    for &n in VERIFICATION_ROUND_CHOICES {
+                        let label = if n == u32::MAX { "∞".into() } else { n.to_string() };
+                        ui.selectable_value(&mut ai_config.max_verification_rounds, n, label);
+                    }
+                }).response.on_hover_text("Verification rounds");
+            if !is_narrow {
+                ui.label(egui::RichText::new("Verify").small().color(egui::Color32::from_rgb(160, 160, 180)));
+            }
+            // Extended thinking toggle
+            ui.checkbox(&mut ai_config.extended_thinking, "")
+                .on_hover_text("Extended Thinking");
+            if !is_narrow {
+                ui.label(egui::RichText::new("extended").small().color(egui::Color32::from_rgb(160, 160, 180)))
+                    .on_hover_text("Extended Thinking");
+            }
+            // Settings button (right beside provider selector)
+            if ui.button(if available_models.needs_configuration { "⚙ ⚠" } else { "⚙" })
+                .on_hover_text("AI Settings")
+                .clicked()
+            {
+                settings_open.0 = !settings_open.0;
+            }
+            // Provider selector
             let mut current_adapter = ai_config.adapter_name.clone();
-            if egui::ComboBox::from_id_salt("provider_select_main").selected_text(&current_adapter).width(80.0).show_ui(ui, |ui| {
-                let mut changed = false;
-                for &adapter in ADAPTER_NAMES {
-                    let configured = env_var_for_adapter(adapter).is_none() || env_var_for_adapter(adapter).and_then(|n| std::env::var(n).ok()).is_some_and(|v| !v.is_empty()) || ai_config.api_keys.get(adapter).is_some_and(|k| !k.is_empty());
-                    ui.add_enabled_ui(configured, |ui| { if ui.selectable_value(&mut current_adapter, adapter.to_string(), adapter).clicked() { changed = true; } });
+            let combo_w = if is_narrow { 70.0 } else { 80.0 };
+            if egui::ComboBox::from_id_salt("provider_select_main")
+                .selected_text(&current_adapter)
+                .width(combo_w)
+                .show_ui(ui, |ui| {
+                    let mut changed = false;
+                    for &adapter in ADAPTER_NAMES {
+                        let configured = env_var_for_adapter(adapter).is_none()
+                            || env_var_for_adapter(adapter)
+                                .and_then(|n| std::env::var(n).ok())
+                                .is_some_and(|v| !v.is_empty())
+                            || ai_config
+                                .api_keys
+                                .get(adapter)
+                                .is_some_and(|k| !k.is_empty());
+                        ui.add_enabled_ui(configured, |ui| {
+                            if ui.selectable_value(&mut current_adapter, adapter.to_string(), adapter).clicked() {
+                                changed = true;
+                            }
+                        });
+                    }
+                    changed
+                })
+                .inner
+                .unwrap_or(false)
+                && current_adapter != ai_config.adapter_name
+            {
+                if !ai_config.model_name.is_empty() {
+                    ai_config.model_per_provider.insert(ai_config.adapter_name.clone(), ai_config.model_name.clone());
                 }
-                changed
-            }).inner.unwrap_or(false) && current_adapter != ai_config.adapter_name {
-                if !ai_config.model_name.is_empty() { ai_config.model_per_provider.insert(ai_config.adapter_name.clone(), ai_config.model_name.clone()); }
                 ai_config.adapter_name = current_adapter;
-                ai_config.model_name = ai_config.model_per_provider.get(&ai_config.adapter_name).cloned().unwrap_or_default();
-                available_models.models.clear(); available_models.error = None;
+                ai_config.model_name = ai_config
+                    .model_per_provider
+                    .get(&ai_config.adapter_name)
+                    .cloned()
+                    .unwrap_or_default();
+                available_models.models.clear();
+                available_models.error = None;
             }
         });
     });
@@ -362,9 +413,10 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
 }
 
 fn render_code_header(ui: &mut egui::Ui, scad_code: &mut ScadCode, chat_state: &mut ChatState, compilation_state: &mut CompilationState, last_parts: &LastCompiledParts, export_state: &mut ExportState, runtime: &TokioRuntime) {
-    ui.horizontal_wrapped(|ui| {
+    ui.horizontal(|ui| {
         ui.heading("Code");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // Compile/Cancel
             if compilation_state.is_compiling {
                 if ui.button(egui::RichText::new("⏹ Cancel").color(egui::Color32::from_rgb(255, 100, 100))).clicked() {
                     if let Some(cancel) = &compilation_state.cancel_signal {
@@ -375,6 +427,7 @@ fn render_code_header(ui: &mut egui::Ui, scad_code: &mut ScadCode, chat_state: &
                 scad_code.dirty = true;
             }
 
+            // $fn selector
             let fn_label = format!("$fn {}", scad_code.fn_value);
             egui::ComboBox::from_id_salt("fn_select")
                 .selected_text(&fn_label)
@@ -386,33 +439,64 @@ fn render_code_header(ui: &mut egui::Ui, scad_code: &mut ScadCode, chat_state: &
                         }
                     }
                 });
-            if ui.button("🗑").clicked() {
-                scad_code.text.clear(); scad_code.dirty = true; compilation_state.should_zoom = true;
-                chat_state.session_start = chat_state.messages.len(); chat_state.history_index = None; chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle;
+
+            // Clear
+            if ui.button("🗑").on_hover_text("Clear code & chat").clicked() {
+                scad_code.text.clear();
+                scad_code.dirty = true;
+                compilation_state.should_zoom = true;
+                chat_state.session_start = chat_state.messages.len();
+                chat_state.history_index = None;
+                chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle;
             }
-            if export_state.receiver.is_some() { ui.spinner(); } else {
+
+            // Export
+            if export_state.receiver.is_some() {
+                ui.spinner();
+            } else {
                 let has_parts = !last_parts.parts.is_empty();
                 let export_btn = ui.add_enabled(has_parts, egui::Button::new("💾"));
+                let export_btn_rect = export_btn.rect;
+                let export_btn_hovered = export_btn.contains_pointer();
+                let export_btn_clicked = export_btn.clicked();
+                export_btn.on_hover_text("Export model");
+
                 let popup_id = ui.make_persistent_id("export_popup");
-                if export_btn.clicked() && has_parts { ui.memory_mut(|m| m.toggle_popup(popup_id)); }
+                if export_btn_clicked && has_parts {
+                    ui.memory_mut(|m| m.toggle_popup(popup_id));
+                }
                 if ui.memory(|m| m.is_popup_open(popup_id)) {
-                    let area = egui::Area::new(popup_id).order(egui::Order::Foreground).fixed_pos(export_btn.rect.left_bottom()).show(ui.ctx(), |ui| {
-                        egui::Frame::popup(ui.style()).show(ui, |ui| {
-                            ui.set_min_width(160.0);
-                            for &fmt in ALL_FORMATS {
-                                if ui.button(fmt.label()).clicked() {
-                                    let ext = fmt.extension(); let (tx, rx) = mpsc::channel();
-                                    export_state.receiver = Some(Mutex::new(rx)); export_state.pending_format = Some(fmt);
-                                    runtime.0.spawn(async move {
-                                        let handle = rfd::AsyncFileDialog::new().set_file_name(format!("model.{ext}")).add_filter(ext.to_uppercase(), &[ext]).save_file().await;
-                                        let _ = tx.send(handle.map(|h| h.path().to_path_buf()));
-                                    });
-                                    ui.memory_mut(bevy_egui::egui::Memory::close_popup);
+                    let area = egui::Area::new(popup_id)
+                        .order(egui::Order::Foreground)
+                        .fixed_pos(export_btn_rect.left_bottom())
+                        .show(ui.ctx(), |ui| {
+                            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                                ui.set_min_width(160.0);
+                                for &fmt in ALL_FORMATS {
+                                    if ui.button(fmt.label()).clicked() {
+                                        let ext = fmt.extension();
+                                        let (tx, rx) = mpsc::channel();
+                                        export_state.receiver = Some(Mutex::new(rx));
+                                        export_state.pending_format = Some(fmt);
+                                        runtime.0.spawn(async move {
+                                            let handle = rfd::AsyncFileDialog::new()
+                                                .set_file_name(format!("model.{ext}"))
+                                                .add_filter(ext.to_uppercase(), &[ext])
+                                                .save_file()
+                                                .await;
+                                            let _ = tx.send(handle.map(|h| h.path().to_path_buf()));
+                                        });
+                                        ui.memory_mut(bevy_egui::egui::Memory::close_popup);
+                                    }
                                 }
-                            }
+                            });
                         });
-                    });
-                    if ui.input(|i| i.pointer.any_click()) && !area.response.contains_pointer() && !export_btn.contains_pointer() { ui.memory_mut(bevy_egui::egui::Memory::close_popup); }
+                    if ui.input(|i| i.pointer.any_click())
+                        && !area.response.contains_pointer()
+                        && !export_btn_hovered
+                    {
+                        ui.memory_mut(bevy_egui::egui::Memory::close_popup);
+                    }
                 }
             }
         });
