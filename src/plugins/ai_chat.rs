@@ -153,7 +153,7 @@ impl Default for AiConfig {
             last_ollama_host: ollama_host.clone(),
             ollama_host,
             system_prompt: DEFAULT_SYSTEM_PROMPT.into(),
-            temperature: 0.7,
+            temperature: 0.0,
             max_verification_rounds: 2,
             extended_thinking: false,
         }
