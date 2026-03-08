@@ -3,6 +3,25 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.8.0] - 2026-03-08
+
+### Added
+
+- **Compilation Cancellation** — long-running compilations can now be cancelled with a "⏹ Cancel" button that appears during compilation, providing better control over the compile process.
+- **Compilation Timeout Support** — added timeout support for compilation process in test infrastructure to prevent hanging tests.
+- **Custom Ollama Host Configuration** — added support for configuring custom Ollama host URLs in AI settings, allowing connection to Ollama instances running on different hosts or ports.
+
+### Changed
+
+- **AI Assistant Header Layout** — redesigned header with improved responsive layout, better button placement, and comprehensive hover tooltips. Settings icon moved beside provider selector for better grouping.
+- **Code Block Support** — enhanced AI chat to support both `synapscad` and `openscad` code block formats for improved flexibility.
+
+### Improved
+
+- **Button Tooltips** — all header buttons now have descriptive hover tooltips for better usability.
+- **Responsive Design** — AI Assistant header adapts better to narrow panel widths by hiding non-essential text labels.
+
+
 ## [0.7.2] - 2026-03-07
 
 ### Added
