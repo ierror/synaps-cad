@@ -1117,18 +1117,27 @@ fn apply_search_replace(code: &str, replacements: &[(String, String)]) -> Result
 }
 
 /// Extracts `OpenSCAD` code from AI response.
-/// Supports ` ```synapscad ` code blocks (ignores any `:suffix`).
+/// Supports ` ```synapscad ` and ` ```openscad ` code blocks (ignores any `:suffix`).
 fn extract_openscad_code(text: &str) -> Option<String> {
-    let marker = "```synapscad";
-    let start = text.find(marker)?;
-    let rest = &text[start + marker.len()..];
+    // Try both markers
+    let markers = ["```synapscad", "```openscad"];
+    
+    for marker in &markers {
+        if let Some(start) = text.find(marker) {
+            let rest = &text[start + marker.len()..];
 
-    // Skip any :suffix and find the newline
-    let newline = rest.find('\n').unwrap_or(0);
-    let code_rest = &rest[newline..];
-    let end = code_rest.find("```")?;
-    let code = code_rest[..end].trim().to_string();
-    if code.is_empty() { None } else { Some(code) }
+            // Skip any :suffix and find the newline
+            let newline = rest.find('\n').unwrap_or(0);
+            let code_rest = &rest[newline..];
+            let end = code_rest.find("```")?;
+            let code = code_rest[..end].trim().to_string();
+            if !code.is_empty() {
+                return Some(code);
+            }
+        }
+    }
+    
+    None
 }
 
 #[cfg(test)]
@@ -1226,8 +1235,61 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_code_change_full_replace_openscad() {
+        let text = "Here's the code:\n\n```openscad\nsphere(5);\n```";
+        match extract_code_change(text) {
+            Some(CodeChange::FullReplace(code)) => {
+                assert_eq!(code, "sphere(5);");
+            }
+            _ => panic!("Expected FullReplace"),
+        }
+    }
+
+    #[test]
     fn test_extract_code_change_none() {
         let text = "No code here, just a description.";
         assert!(extract_code_change(text).is_none());
+    }
+
+    #[test]
+    fn test_extract_openscad_code_synapscad() {
+        let text = "Here's the code:\n\n```synapscad\ncube(10);\n```";
+        let code = extract_openscad_code(text);
+        assert_eq!(code, Some("cube(10);".into()));
+    }
+
+    #[test]
+    fn test_extract_openscad_code_openscad() {
+        let text = "Here's the code:\n\n```openscad\nsphere(5);\n```";
+        let code = extract_openscad_code(text);
+        assert_eq!(code, Some("sphere(5);".into()));
+    }
+
+    #[test]
+    fn test_extract_openscad_code_with_suffix() {
+        let text = "Code with suffix:\n\n```synapscad:example\ncylinder(r=5, h=10);\n```";
+        let code = extract_openscad_code(text);
+        assert_eq!(code, Some("cylinder(r=5, h=10);".into()));
+    }
+
+    #[test]
+    fn test_extract_openscad_code_openscad_with_suffix() {
+        let text = "Code with suffix:\n\n```openscad:test\ntranslate([10,0,0]) cube(5);\n```";
+        let code = extract_openscad_code(text);
+        assert_eq!(code, Some("translate([10,0,0]) cube(5);".into()));
+    }
+
+    #[test]
+    fn test_extract_openscad_code_prefers_synapscad() {
+        let text = "Two blocks:\n\n```openscad\nsphere(5);\n```\n\n```synapscad\ncube(10);\n```";
+        let code = extract_openscad_code(text);
+        assert_eq!(code, Some("cube(10);".into()));
+    }
+
+    #[test]
+    fn test_extract_openscad_code_empty() {
+        let text = "Empty code:\n\n```synapscad\n\n```";
+        let code = extract_openscad_code(text);
+        assert_eq!(code, None);
     }
 }
