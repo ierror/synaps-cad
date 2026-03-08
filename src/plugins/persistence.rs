@@ -125,7 +125,7 @@ fn load_session_system(
     if !host.is_empty() && !host.ends_with('/') {
         host.push('/');
     }
-    ai_config.ollama_host = host.clone();
+    ai_config.ollama_host.clone_from(&host);
     ai_config.last_ollama_host = host; // sync on load
 
     label_vis.visible = saved.ui.show_labels;

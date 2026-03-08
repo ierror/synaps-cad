@@ -19,7 +19,7 @@ pub fn compile_scad_code(code: &str, fn_override: u32, cancel: Option<Arc<Atomic
     };
 
     let mut evaluator = Evaluator::new();
-    evaluator.cancel = cancel.clone();
+    evaluator.cancel.clone_from(&cancel);
 
     if fn_override > 0 {
         evaluator.variables.insert("$fn".into(), evaluator::value::Value::Number(f64::from(fn_override)));
@@ -32,7 +32,7 @@ pub fn compile_scad_code(code: &str, fn_override: u32, cancel: Option<Arc<Atomic
 
     let mut parts = Vec::new();
     for (shape, color) in shapes {
-        if cancel.as_ref().map_or(false, |c| c.load(Ordering::Relaxed)) {
+        if cancel.as_ref().is_some_and(|c| c.load(Ordering::Relaxed)) {
             return CompilationResult::Canceled;
         }
         let mut mesh_data = match shape {

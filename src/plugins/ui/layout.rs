@@ -418,10 +418,10 @@ fn render_code_header(ui: &mut egui::Ui, scad_code: &mut ScadCode, chat_state: &
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             // Compile/Cancel
             if compilation_state.is_compiling {
-                if ui.button(egui::RichText::new("⏹ Cancel").color(egui::Color32::from_rgb(255, 100, 100))).clicked() {
-                    if let Some(cancel) = &compilation_state.cancel_signal {
-                        cancel.store(true, std::sync::atomic::Ordering::Relaxed);
-                    }
+                if ui.button(egui::RichText::new("⏹ Cancel").color(egui::Color32::from_rgb(255, 100, 100))).clicked()
+                    && let Some(cancel) = &compilation_state.cancel_signal
+                {
+                    cancel.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             } else if ui.button("Compile").clicked() {
                 scad_code.dirty = true;
@@ -625,7 +625,7 @@ fn render_settings_dialog(
                             if !host.is_empty() && !host.ends_with('/') {
                                 host.push('/');
                             }
-                            ai_config.ollama_host = host.clone();
+                            ai_config.ollama_host.clone_from(&host);
                             ai_config.last_ollama_host = host;
                         }
                     });

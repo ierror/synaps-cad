@@ -112,7 +112,7 @@ pub struct AiConfig {
     pub api_keys: std::collections::HashMap<String, String>,
     /// Per-provider last-used model (`adapter_name` → `model_name`).
     pub model_per_provider: std::collections::HashMap<String, String>,
-    /// Custom Ollama host (e.g. "http://192.168.1.10:11434").
+    /// Custom Ollama host (e.g. <http://192.168.1.10:11434>).
     pub ollama_host: String,
     /// Last committed Ollama host (used to trigger model re-fetch).
     pub last_ollama_host: String,
@@ -429,10 +429,10 @@ async fn fetch_model_names(
         let url = format!("{ollama_host}api/tags");
         let client = reqwest::Client::new();
         let mut req = client.get(&url);
-        if let Some(key) = api_key {
-            if !key.is_empty() {
-                req = req.header("Authorization", format!("Bearer {key}"));
-            }
+        if let Some(key) = api_key
+            && !key.is_empty()
+        {
+            req = req.header("Authorization", format!("Bearer {key}"));
         }
         let res = req.send().await.map_err(|e| format!("Failed to fetch Ollama models: {e}"))?;
         if res.status() == reqwest::StatusCode::UNAUTHORIZED {
@@ -451,14 +451,12 @@ async fn fetch_model_names(
         return Ok(models);
     }
 
-    let client = if let Some(key) = api_key {
+    let client = api_key.map_or_else(Client::default, |key| {
         let key = key.to_string();
         Client::builder()
             .with_auth_resolver_fn(move |_| Ok(Some(AuthData::Key(key.clone()))))
             .build()
-    } else {
-        Client::default()
-    };
+    });
 
     match client.all_model_names(adapter_kind).await {
         Ok(models) if !models.is_empty() => Ok(models),
@@ -728,11 +726,11 @@ async fn run_ai_stream(
     }
 
     // Workaround for Ollama adapter ignoring auth in genai 0.6.0-beta.3
-    if let Some(ref key) = api_key {
-        if !key.is_empty() {
-            let headers = genai::Headers::from(("Authorization", format!("Bearer {key}")));
-            chat_options.extra_headers = Some(headers);
-        }
+    if let Some(key) = api_key
+        && !key.is_empty()
+    {
+        let headers = genai::Headers::from(("Authorization", format!("Bearer {key}")));
+        chat_options.extra_headers = Some(headers);
     }
 
     let stream_response = client

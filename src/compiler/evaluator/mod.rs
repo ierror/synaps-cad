@@ -74,8 +74,9 @@ impl Evaluator {
     }
 
     /// Check if compilation has been canceled.
+    #[must_use]
     pub fn is_canceled(&self) -> bool {
-        self.cancel.as_ref().map_or(false, |c| c.load(Ordering::Relaxed))
+        self.cancel.as_ref().is_some_and(|c| c.load(Ordering::Relaxed))
     }
 
     /// Resolve `$fn` from either explicit args or global variable.

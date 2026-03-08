@@ -192,9 +192,8 @@ fn compile_openscad(code: &str, fn_value: u32, cancel: Option<Arc<AtomicBool>>) 
     eprintln!("[SynapsCAD] Compiling (fn={fn_value})...");
 
     // Catch panics from dependencies (e.g. spade triangulation)
-    let cancel_clone = cancel.clone();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-        compiler::compile_scad_code(code, fn_value, cancel_clone)
+        compiler::compile_scad_code(code, fn_value, cancel)
     }));
 
     let result = match result {
