@@ -426,49 +426,154 @@ fn render_view_selector(ui: &mut egui::Ui, scad_code: &mut ScadCode) {
     }
 }
 
-fn render_settings_dialog(ctx: &egui::Context, settings_open: &mut SettingsDialogOpen, ai_config: &mut AiConfig, available_models: &mut AvailableModels) {
-    egui::Window::new("⚙ AI Settings").open(&mut settings_open.0).resizable(true).default_width(360.0).collapsible(false).anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO).order(egui::Order::Foreground).show(ctx, |ui| {
-        if available_models.needs_configuration { ui.colored_label(egui::Color32::from_rgb(255, 180, 50), "⚠ Previously configured model is no longer available."); ui.add_space(4.0); }
-        ui.horizontal(|ui| {
-            ui.label("Provider:"); let prev = ai_config.adapter_name.clone();
-            egui::ComboBox::from_id_salt("ai_adapter_select").selected_text(&ai_config.adapter_name).show_ui(ui, |ui| {
-                for &adapter in ADAPTER_NAMES {
-                    ui.selectable_value(&mut ai_config.adapter_name, adapter.to_string(), adapter);
+fn render_settings_dialog(
+    ctx: &egui::Context,
+    settings_open: &mut SettingsDialogOpen,
+    ai_config: &mut AiConfig,
+    available_models: &mut AvailableModels,
+) {
+    egui::Window::new("⚙ AI Settings")
+            .open(&mut settings_open.0)
+            .resizable(true)
+            .default_width(360.0)
+            .collapsible(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                if available_models.needs_configuration {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 180, 50),
+                        "⚠ Previously configured model is no longer available.",
+                    );
+                    ui.add_space(4.0);
                 }
-            });
-            if ai_config.adapter_name != prev {
-                if !ai_config.model_name.is_empty() { ai_config.model_per_provider.insert(prev, ai_config.model_name.clone()); }
-                ai_config.model_name = ai_config.model_per_provider.get(&ai_config.adapter_name).cloned().unwrap_or_default();
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("Model:");
-            let needs_key = env_var_for_adapter(&ai_config.adapter_name).is_some();
-            let has_key = !needs_key || env_var_for_adapter(&ai_config.adapter_name).and_then(|n| std::env::var(n).ok()).is_some_and(|v| !v.is_empty()) || !ai_config.api_key().is_empty();
-            if has_key {
-                let model_label = if available_models.loading { "Loading...".into() } else if available_models.models.is_empty() { "No models available".into() } else { ai_config.model_name.clone() };
-                let prev_model = ai_config.model_name.clone();
-                egui::ComboBox::from_id_salt("ai_model_select").selected_text(model_label).show_ui(ui, |ui| {
-                    for model in &available_models.models { ui.selectable_value(&mut ai_config.model_name, model.clone(), model.as_str()); }
+                ui.horizontal(|ui| {
+                    ui.label("Provider:");
+                    let prev = ai_config.adapter_name.clone();
+                    egui::ComboBox::from_id_salt("ai_adapter_select")
+                        .selected_text(&ai_config.adapter_name)
+                        .show_ui(ui, |ui| {
+                            for &adapter in ADAPTER_NAMES {
+                                ui.selectable_value(
+                                    &mut ai_config.adapter_name,
+                                    adapter.to_string(),
+                                    adapter,
+                                );
+                            }
+                        });
+                    if ai_config.adapter_name != prev {
+                        if !ai_config.model_name.is_empty() {
+                            ai_config
+                                .model_per_provider
+                                .insert(prev, ai_config.model_name.clone());
+                        }
+                        ai_config.model_name = ai_config
+                            .model_per_provider
+                            .get(&ai_config.adapter_name)
+                            .cloned()
+                            .unwrap_or_default();
+                    }
                 });
-                if ai_config.model_name != prev_model && available_models.models.contains(&ai_config.model_name) { available_models.needs_configuration = false; }
-            } else { ui.colored_label(egui::Color32::from_rgb(255, 180, 50), "⚠ Set API key first"); }
-        });
-        if let Some(ref err) = available_models.error {
-            egui::ScrollArea::vertical().id_salt("settings_err_scroll").max_height(60.0).show(ui, |ui| {
-                ui.colored_label(egui::Color32::from_rgb(255, 100, 100), format!("⚠ {err}"));
+                ui.horizontal(|ui| {
+                    ui.label("Model:");
+                    let needs_key = env_var_for_adapter(&ai_config.adapter_name).is_some();
+                    let has_key = !needs_key
+                        || env_var_for_adapter(&ai_config.adapter_name)
+                            .and_then(|n| std::env::var(n).ok())
+                            .is_some_and(|v| !v.is_empty())
+                        || !ai_config.api_key().is_empty();
+                    if has_key {
+                        let model_label = if available_models.loading {
+                            "Loading...".into()
+                        } else if available_models.models.is_empty() {
+                            "No models available".into()
+                        } else {
+                            ai_config.model_name.clone()
+                        };
+                        let prev_model = ai_config.model_name.clone();
+                        egui::ComboBox::from_id_salt("ai_model_select")
+                            .selected_text(model_label)
+                            .show_ui(ui, |ui| {
+                                for model in &available_models.models {
+                                    ui.selectable_value(
+                                        &mut ai_config.model_name,
+                                        model.clone(),
+                                        model.as_str(),
+                                    );
+                                }
+                            });
+                        if ai_config.model_name != prev_model
+                            && available_models.models.contains(&ai_config.model_name)
+                        {
+                            available_models.needs_configuration = false;
+                        }
+                    } else {
+                        ui.colored_label(egui::Color32::from_rgb(255, 180, 50), "⚠ Set API key first");
+                    }
+                });
+                if let Some(ref err) = available_models.error {
+                    egui::ScrollArea::vertical()
+                        .id_salt("settings_err_scroll")
+                        .max_height(60.0)
+                        .show(ui, |ui| {
+                            ui.colored_label(egui::Color32::from_rgb(255, 100, 100), format!("⚠ {err}"));
+                        });
+                }
+
+                if ai_config.adapter_name == "Ollama" {
+                    ui.horizontal(|ui| {
+                        ui.label("Ollama Host:");
+                        let res = ui.add(
+                            egui::TextEdit::singleline(&mut ai_config.ollama_host)
+                                .hint_text("http://localhost:11434"),
+                        );
+                        if res.lost_focus() || (res.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
+                            let mut host = ai_config.ollama_host.trim().to_string();
+                            if !host.is_empty() && !host.ends_with('/') {
+                                host.push('/');
+                            }
+                            ai_config.ollama_host = host.clone();
+                            ai_config.last_ollama_host = host;
+                        }
+                    });
+                }
+
+                ui.horizontal(|ui| {
+                    ui.label("API Key:");
+                    let env_var = env_var_for_adapter(&ai_config.adapter_name);
+                    let env_set = env_var
+                        .and_then(|n| std::env::var(n).ok())
+                        .is_some_and(|v| !v.is_empty());
+                    if env_set && ai_config.api_key().is_empty() {
+                        ui.add_enabled(
+                            false,
+                            egui::TextEdit::singleline(&mut String::new())
+                                .hint_text(format!("Set via {}", env_var.unwrap_or(""))),
+                        );
+                    } else {
+                        let key = ai_config.api_key_mut();
+                        ui.add(
+                            egui::TextEdit::singleline(key)
+                                .password(true)
+                                .hint_text(if env_set { "Override env var" } else { "Enter API key" }),
+                        );
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Temperature:");
+                    ui.add(egui::Slider::new(&mut ai_config.temperature, 0.0..=2.0).step_by(0.1));
+                });
+                ui.label("System Prompt:");
+                egui::ScrollArea::vertical()
+                    .id_salt("settings_prompt_scroll")
+                    .max_height(120.0)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut ai_config.system_prompt.clone())
+                                .desired_width(ui.available_width())
+                                .desired_rows(4)
+                                .interactive(false),
+                        );
+                    });
             });
-        }
-        ui.horizontal(|ui| {
-            ui.label("API Key:"); let env_var = env_var_for_adapter(&ai_config.adapter_name);
-            let env_set = env_var.and_then(|n| std::env::var(n).ok()).is_some_and(|v| !v.is_empty());
-            if env_set && ai_config.api_key().is_empty() { ui.add_enabled(false, egui::TextEdit::singleline(&mut String::new()).hint_text(format!("Set via {}", env_var.unwrap_or("")))); }
-            else { let key = ai_config.api_key_mut(); ui.add(egui::TextEdit::singleline(key).password(true).hint_text(if env_set { "Override env var" } else { "Enter API key" })); }
-        });
-        ui.horizontal(|ui| { ui.label("Temperature:"); ui.add(egui::Slider::new(&mut ai_config.temperature, 0.0..=2.0).step_by(0.1)); });
-        ui.label("System Prompt:");
-        egui::ScrollArea::vertical().id_salt("settings_prompt_scroll").max_height(120.0).show(ui, |ui| {
-            ui.add(egui::TextEdit::multiline(&mut ai_config.system_prompt.clone()).desired_width(ui.available_width()).desired_rows(4).interactive(false));
-        });
-    });
-}
+    }

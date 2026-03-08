@@ -49,6 +49,9 @@ struct PersistentData {
     /// Per-provider last-used model (`adapter_name` → `model_name`).
     #[serde(default)]
     model_per_provider: std::collections::HashMap<String, String>,
+    /// Custom Ollama host.
+    #[serde(default = "default_ollama_host")]
+    ollama_host: String,
     #[serde(default)]
     ui: UiSettings,
     /// Legacy: old multi-part data. Merged into `editor_code` on load.
@@ -74,6 +77,10 @@ const fn default_true() -> bool {
 
 const fn default_verification_rounds() -> u32 {
     2
+}
+
+fn default_ollama_host() -> String {
+    std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".into())
 }
 
 fn config_dir() -> Option<PathBuf> {
@@ -114,6 +121,12 @@ fn load_session_system(
     ai_config.max_verification_rounds = saved.max_verification_rounds;
     ai_config.api_keys = saved.api_keys;
     ai_config.model_per_provider = saved.model_per_provider;
+    let mut host = saved.ollama_host;
+    if !host.is_empty() && !host.ends_with('/') {
+        host.push('/');
+    }
+    ai_config.ollama_host = host.clone();
+    ai_config.last_ollama_host = host; // sync on load
 
     label_vis.visible = saved.ui.show_labels;
 
@@ -277,6 +290,7 @@ fn save_session(ai_config: &AiConfig, chat_state: &ChatState, scad_code: &ScadCo
         max_verification_rounds: ai_config.max_verification_rounds,
         api_keys: ai_config.api_keys.clone(),
         model_per_provider: ai_config.model_per_provider.clone(),
+        ollama_host: ai_config.ollama_host.clone(),
         ui: UiSettings {
             show_labels: label_vis.visible,
         },
