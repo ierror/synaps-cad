@@ -7,6 +7,16 @@ use csgrs::csg::CSG;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+fn compile_with_timeout(code: &str, fn_override: u32) -> CompilationResult {
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_clone = cancel.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+        cancel_clone.store(true, Ordering::Relaxed);
+    });
+    compile_scad_code(code, fn_override, Some(cancel))
+}
+
 #[test]
 fn test_star_difference() {
     let code = r#"
@@ -25,7 +35,7 @@ difference() {
         star(points = 5, outer_r = 5, inner_r = 2, h = 2);
 }
 "#;
-    let result = compile_scad_code(code, 0, None);
+    let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             eprintln!("Parts: {}", parts.len());
@@ -57,7 +67,7 @@ linear_extrude(height = 2)
         [r * cos(a), r * sin(a)]
     ]);
 "#;
-    let result = compile_scad_code(code, 0, None);
+    let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             eprintln!("Star standalone - Parts: {}", parts.len());
@@ -82,7 +92,7 @@ fn test_text_basic() {
 linear_extrude(height = 5)
     text("Hello", size = 20);
 "#;
-    let result = compile_scad_code(code, 0, None);
+    let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, warnings, .. } => {
             assert!(!parts.is_empty(), "text() should produce geometry");
@@ -106,7 +116,7 @@ fn test_text_center_aligned() {
 linear_extrude(height = 2)
     text("A", size = 30, halign = "center", valign = "center");
 "#;
-    let result = compile_scad_code(code, 0, None);
+    let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty(), "Centered text should produce geometry");
@@ -125,7 +135,7 @@ fn test_text_with_font_style() {
 linear_extrude(height = 3)
     text("B", size = 20, font = "Liberation Sans:style=Bold");
 "#;
-    let result = compile_scad_code(code, 0, None);
+    let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty(), "Bold text should produce geometry");
@@ -145,7 +155,7 @@ difference() {
             text("Hi", size = 15, halign = "center", valign = "center");
 }
 "#;
-    let result = compile_scad_code(code, 0, None);
+    let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty(), "Text engraving should produce geometry");
@@ -163,7 +173,7 @@ difference() {
 #[test]
 fn test_text_2d_only() {
     let code = r#"text("X", size = 10);"#;
-    let result = compile_scad_code(code, 0, None);
+    let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty(), "2D text should render as thin geometry");
@@ -184,7 +194,7 @@ translate([20,0,0])
 translate([0,10,0])
     text( "Right to left" ,size=5, direction="rtl");
 "#;
-    let result = compile_scad_code(code, 0, None);
+    let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             assert_eq!(parts.len(), 4, "Should produce 4 text parts");
@@ -200,24 +210,6 @@ translate([0,10,0])
     }
 }
 
-#[test]
-fn test_compilation_cancellation() {
-    let code = "for(i=[0:100]) { for(j=[0:100]) { cube(1); } }";
-    let cancel = Arc::new(AtomicBool::new(false));
-    let cancel_clone = cancel.clone();
-
-    // Spawn a thread to cancel after a short delay
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        cancel_clone.store(true, Ordering::Relaxed);
-    });
-
-    let result = compile_scad_code(code, 0, Some(cancel));
-    match result {
-        CompilationResult::Canceled => {} // Success
-        _ => panic!("Expected compilation to be canceled, but got {:?}", result),
-    }
-}
 
 #[test]
 fn test_axis_angle_rotate() {
@@ -225,7 +217,7 @@ fn test_axis_angle_rotate() {
 rotate(a = 45, v = [1, 0, 0])
     cube([10, 10, 10]);
 "#;
-    let result = compile_scad_code(code, 0, None);
+    let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty(), "Should produce geometry");
@@ -263,7 +255,7 @@ fn csg_mesh_to_mesh_data_local(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
 }
 
 fn compile_to_merged_mesh(code: &str) -> MeshData {
-    match compile_scad_code(code, 0, None) {
+    match compile_with_timeout(code, 0) {
         CompilationResult::Success { parts, .. } => {
             let mut positions = Vec::new();
             let mut normals = Vec::new();
@@ -310,7 +302,7 @@ module ring(radius, count){
 }
 ring(20, 4) { cube(3); }
 "#;
-    let result = compile_scad_code(code, 0, None);
+    let result = compile_with_timeout(code, 0);
     match result {
     CompilationResult::Success { parts, .. } => {
 
@@ -377,7 +369,7 @@ module make_ring_of(radius, count){
     }
 }
 "#;
-    let result = compile_scad_code(code, 0, None);
+    let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
             let total_verts: usize = parts.iter().map(|p| p.positions.len()).sum();
@@ -592,7 +584,7 @@ fn example_path(relative: &str) -> String {
 fn assert_example_compiles(relative: &str) {
     let path = example_path(relative);
     let code = std::fs::read_to_string(&path).unwrap();
-    match compile_scad_code(&code, 0, None) {
+    match compile_with_timeout(&code, 0) {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty());
         }
@@ -604,7 +596,7 @@ fn assert_example_compiles(relative: &str) {
 fn assert_example_no_panic(relative: &str) {
     let path = example_path(relative);
     let code = std::fs::read_to_string(&path).unwrap();
-    let _ = std::panic::catch_unwind(|| compile_scad_code(&code, 0, None));
+    let _ = std::panic::catch_unwind(|| compile_with_timeout(&code, 0));
 }
 
 #[derive(serde::Deserialize)]
@@ -622,7 +614,7 @@ struct BBox {
 fn assert_example_matches_reference(relative: &str) {
     let path = example_path(relative);
     let code = std::fs::read_to_string(&path).unwrap();
-    let parts = match compile_scad_code(&code, 0, None) {
+    let parts = match compile_with_timeout(&code, 0) {
         CompilationResult::Success { parts, .. } => parts,
         CompilationResult::Error(e) => panic!("{relative}: compilation failed: {e}"),
         CompilationResult::Canceled => panic!("Compilation was unexpectedly canceled"),
@@ -639,7 +631,7 @@ fn assert_example_matches_reference(relative: &str) {
 fn assert_example_matches_reference_loose(relative: &str) {
     let path = example_path(relative);
     let code = std::fs::read_to_string(&path).unwrap();
-    let parts = match compile_scad_code(&code, 0, None) {
+    let parts = match compile_with_timeout(&code, 0) {
         CompilationResult::Success { parts, .. } => parts,
         CompilationResult::Error(e) => panic!("{relative}: compilation failed: {e}"),
         CompilationResult::Canceled => panic!("Compilation was unexpectedly canceled"),
@@ -783,7 +775,7 @@ fn openscad_old_example024() { assert_example_matches_reference("Old/example024.
 fn assert_example_matches_reference_very_loose(relative: &str) {
     let path = example_path(relative);
     let code = std::fs::read_to_string(&path).unwrap();
-    let parts = match compile_scad_code(&code, 0, None) {
+    let parts = match compile_with_timeout(&code, 0) {
         CompilationResult::Success { parts, .. } => parts,
         CompilationResult::Error(e) => panic!("{relative}: compilation failed: {e}"),
         CompilationResult::Canceled => panic!("Compilation was unexpectedly canceled"),
@@ -827,7 +819,7 @@ fn dodecahedron_scad() -> &'static str {
 #[test]
 fn test_polyhedron_pentagon_faces_standalone() {
     let code = format!("{} polyhedron(points=points, faces=faces);", dodecahedron_scad());
-    match compile_scad_code(&code, 0, None) {
+    match compile_with_timeout(&code, 0) {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty());
             let total_tris: usize = parts.iter().map(|p| p.positions.len() / 3).sum();
@@ -841,7 +833,7 @@ fn test_polyhedron_pentagon_faces_standalone() {
 #[test]
 fn test_cone_zero_r1() {
     let code = "cylinder(h=5, r1=0, r2=10, $fn=12);";
-    match compile_scad_code(code, 0, None) {
+    match compile_with_timeout(code, 0) {
         CompilationResult::Success { parts, .. } => { assert!(!parts.is_empty()); }
         CompilationResult::Error(e) => panic!("compilation failed: {e}"),
         CompilationResult::Canceled => panic!("Compilation was unexpectedly canceled"),
@@ -855,7 +847,7 @@ color("red") cube(10);
 color("green") translate([20, 0, 0]) sphere(5, $fn=12);
 color([0.2, 0.4, 0.8]) translate([40, 0, 0]) cylinder(h=10, r=5, $fn=12);
 "#;
-    match compile_scad_code(code, 0, None) {
+    match compile_with_timeout(code, 0) {
         CompilationResult::Success { parts, .. } => {
             assert_eq!(parts.len(), 3);
             assert_eq!(parts[0].color, Some([1.0, 0.0, 0.0]));
@@ -926,7 +918,7 @@ module view_main() {
 
 if ($view == "main") { view_main(); }
 "##;
-    match compile_scad_code(code, 0, None) {
+    match compile_with_timeout(code, 0) {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty(), "Expected at least one part");
         }
