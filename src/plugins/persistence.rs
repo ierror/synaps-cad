@@ -119,7 +119,13 @@ fn load_session_system(
     ai_config.model_name = saved.model_name;
     ai_config.temperature = saved.temperature;
     ai_config.max_verification_rounds = saved.max_verification_rounds;
-    ai_config.api_keys = saved.api_keys;
+    
+    // Trim API keys when loading from storage
+    ai_config.api_keys = saved.api_keys
+        .into_iter()
+        .map(|(k, v)| (k, v.trim().to_string()))
+        .collect();
+    
     ai_config.model_per_provider = saved.model_per_provider;
     let mut host = saved.ollama_host;
     if !host.is_empty() && !host.ends_with('/') {

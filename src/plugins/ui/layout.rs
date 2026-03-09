@@ -659,8 +659,12 @@ fn render_settings_dialog(
                                 .hint_text(if env_set { "Override env var" } else { "Enter API key" }),
                         );
                         
-                        // Reload models when API key field loses focus
+                        // Trim and reload models when API key field loses focus
                         if api_key_response.lost_focus() {
+                            // Trim whitespace from the API key
+                            let trimmed_key = key.trim().to_string();
+                            *key = trimmed_key;
+                            
                             // Force model reload by marking the API key as changed
                             available_models.last_api_key = "force_reload".to_string();
                         }
