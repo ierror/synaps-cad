@@ -360,17 +360,23 @@ fn fetch_models_system(
                             ai_config.model_name = pending;
                             available.needs_configuration = false;
                         } else {
-                            available.needs_configuration = true;
+                            // Model was previously configured but is no longer in the list
+                            available.needs_configuration = !pending.is_empty();
                         }
-                    } else { available.needs_configuration = !ai_config.model_name.is_empty()
-                        && !models.contains(&ai_config.model_name) && available.last_adapter != ai_config.adapter_name; }
+                    } else {
+                        // Only flag as needing configuration when we had a model name
+                        // that's no longer in the fetched list (i.e. renamed/deleted)
+                        available.needs_configuration = !ai_config.model_name.is_empty()
+                            && !models.contains(&ai_config.model_name);
+                    }
                     available.models = models;
                 }
                 Err(e) => {
                     eprintln!("[SynapsCAD] Failed to fetch models: {e}");
                     available.models.clear();
                     available.error = Some(e);
-                    available.needs_configuration = true;
+                    // Don't set needs_configuration — this is an auth/network error,
+                    // not a missing model
                 }
             }
             return;
