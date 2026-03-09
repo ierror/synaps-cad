@@ -568,6 +568,7 @@ fn render_settings_dialog(
                             .get(&ai_config.adapter_name)
                             .cloned()
                             .unwrap_or_default();
+                        available_models.force_reload = true;
                     }
                 });
                 ui.horizontal(|ui| {
@@ -633,7 +634,7 @@ fn render_settings_dialog(
                             
                             // Reload models when Ollama host changes
                             if res.lost_focus() {
-                                available_models.last_api_key = "force_reload".to_string();
+                                available_models.force_reload = true;
                             }
                         }
                     });
@@ -663,10 +664,12 @@ fn render_settings_dialog(
                         if api_key_response.lost_focus() {
                             // Trim whitespace from the API key
                             let trimmed_key = key.trim().to_string();
-                            *key = trimmed_key;
+                            if trimmed_key != *key {
+                                *key = trimmed_key;
+                            }
                             
                             // Force model reload by marking the API key as changed
-                            available_models.last_api_key = "force_reload".to_string();
+                            available_models.force_reload = true;
                         }
                     }
                 });

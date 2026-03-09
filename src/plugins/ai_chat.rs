@@ -173,6 +173,8 @@ pub struct AvailableModels {
     pub needs_configuration: bool,
     /// Saved model name to restore after model list is fetched.
     pub pending_model: Option<String>,
+    /// Set by UI on focus-lost to trigger a model reload.
+    pub force_reload: bool,
     #[allow(clippy::type_complexity)]
     pub receiver: Option<Mutex<mpsc::Receiver<Result<Vec<String>, String>>>>,
 }
@@ -316,7 +318,14 @@ impl Plugin for AiChatPlugin {
             .add_systems(
                 Update,
                 (
-                    fetch_models_system,
+                    fetch_models_system.run_if(
+                        // Only run when loading, polling results, or explicitly triggered
+                        |available: Res<AvailableModels>| {
+                            available.loading
+                                || available.receiver.is_some()
+                                || available.force_reload
+                        }
+                    ),
                     ai_send_system,
                     ai_receive_system,
                     ai_verify_system,
@@ -341,9 +350,6 @@ fn fetch_models_system(
             available.receiver = None;
             match result {
                 Ok(models) => {
-                    if cfg!(debug_assertions) {
-                        eprintln!("[DEBUG] Received {} models from background fetch", models.len());
-                    }
                     available.error = None;
                     // Restore pending model if it's in the fetched list
                     if let Some(pending) = available.pending_model.take() {
@@ -368,25 +374,12 @@ fn fetch_models_system(
         }
     }
 
-    // Trigger a new fetch if adapter changed or force reload requested  
+    // Trigger a new fetch if adapter, API key, or Ollama host changed
     let current_key = ai_config.api_key().to_string();
-    let adapter_changed = available.last_adapter != ai_config.adapter_name;
-    let force_reload = available.last_api_key == "force_reload";
-    
-    if cfg!(debug_assertions) {
-        if adapter_changed {
-            eprintln!("[DEBUG] Adapter changed from '{}' to '{}', triggering model fetch", available.last_adapter, ai_config.adapter_name);
-        }
-        if force_reload {
-            eprintln!("[DEBUG] Force reload requested, triggering model fetch");
-        }
-    }
-    
-    if (adapter_changed || force_reload) && !available.loading {
-        if cfg!(debug_assertions) {
-            eprintln!("[DEBUG] Starting model fetch for adapter '{}' with key length {}", ai_config.adapter_name, current_key.len());
-        }
-        
+    let key_changed = available.last_api_key != current_key;
+    let host_changed = available.last_ollama_host != ai_config.last_ollama_host;
+    available.force_reload = false;
+    if (available.last_adapter != ai_config.adapter_name || key_changed || (ai_config.adapter_name == "Ollama" && host_changed)) && !available.loading {
         // Clear stale models immediately so the UI doesn't show old data
         available.models.clear();
         // Save current model name to restore after fetch if it's still valid
@@ -410,16 +403,7 @@ fn fetch_models_system(
         available.receiver = Some(Mutex::new(rx));
 
         runtime.0.spawn(async move {
-            if cfg!(debug_assertions) {
-                eprintln!("[DEBUG] Fetching models for '{}' in background thread", adapter_name);
-            }
             let result = fetch_model_names(&adapter_name, api_key.as_deref(), &ollama_host).await;
-            if cfg!(debug_assertions) {
-                match &result {
-                    Ok(models) => eprintln!("[DEBUG] Successfully fetched {} models", models.len()),
-                    Err(e) => eprintln!("[DEBUG] Model fetch failed: {}", e),
-                }
-            }
             let _ = tx.send(result);
         });
     }
@@ -591,21 +575,22 @@ async fn run_ai_stream(
     use genai::resolver::{AuthData, Endpoint};
     use genai::{Client, ServiceTarget};
 
-    let ollama_host = ollama_host.to_string();
-    let api_key_str = api_key.map(String::from);
-
-    let client = Client::builder()
-        .with_service_target_resolver_fn(move |service_target: ServiceTarget| {
-            let mut service_target = service_target;
-            if service_target.model.adapter_kind == AdapterKind::Ollama {
-                service_target.endpoint = Endpoint::from_owned(ollama_host.clone());
-            }
-            if let Some(ref key) = api_key_str {
-                service_target.auth = AuthData::Key(key.clone());
-            }
-            Ok(service_target)
-        })
-        .build();
+    // Use the same auth approach as fetch_model_names (which works)
+    let client = api_key.map_or_else(Client::default, |key| {
+        let key = key.to_string();
+        let ollama_host_clone = ollama_host.to_string();
+        
+        Client::builder()
+            .with_auth_resolver_fn(move |_| Ok(Some(AuthData::Key(key.clone()))))
+            .with_service_target_resolver_fn(move |service_target: ServiceTarget| {
+                let mut service_target = service_target;
+                if service_target.model.adapter_kind == AdapterKind::Ollama {
+                    service_target.endpoint = Endpoint::from_owned(ollama_host_clone.clone());
+                }
+                Ok(service_target)
+            })
+            .build()
+    });
 
     let mut system_prompt =
         format!("{base_system_prompt}\n\nCurrent OpenSCAD code:\n```\n{current_code}\n```\n");
@@ -752,11 +737,13 @@ async fn run_ai_stream(
     }
 
     // Workaround for Ollama adapter ignoring auth in genai 0.6.0-beta.3
-    if let Some(key) = api_key
-        && !key.is_empty()
-    {
-        let headers = genai::Headers::from(("Authorization", format!("Bearer {key}")));
-        chat_options.extra_headers = Some(headers);
+    if AdapterKind::from_model(model_name).ok() == Some(AdapterKind::Ollama) {
+        if let Some(key) = api_key
+            && !key.is_empty()
+        {
+            let headers = genai::Headers::from(("Authorization", format!("Bearer {key}")));
+            chat_options.extra_headers = Some(headers);
+        }
     }
 
     let stream_response = client
