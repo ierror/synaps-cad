@@ -1,6 +1,35 @@
 use crate::plugins::compilation::StlMeshData;
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
+
+/// Weld vertices that share the same position, producing a properly indexed
+/// mesh with shared vertices (manifold-compatible). The rendering pipeline
+/// duplicates vertices for flat shading; this reverses that for export.
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+fn weld_vertices(positions: &[[f32; 3]], indices: &[u32]) -> (Vec<[f32; 3]>, Vec<u32>) {
+    const QUANT: f64 = 1e6;
+    let mut vmap: HashMap<[i64; 3], u32> = HashMap::new();
+    let mut new_positions: Vec<[f32; 3]> = Vec::new();
+    let mut new_indices: Vec<u32> = Vec::with_capacity(indices.len());
+
+    for &idx in indices {
+        let pos = positions[idx as usize];
+        let key = [
+            (f64::from(pos[0]) * QUANT).round() as i64,
+            (f64::from(pos[1]) * QUANT).round() as i64,
+            (f64::from(pos[2]) * QUANT).round() as i64,
+        ];
+        let new_idx = *vmap.entry(key).or_insert_with(|| {
+            let i = new_positions.len() as u32;
+            new_positions.push(pos);
+            i
+        });
+        new_indices.push(new_idx);
+    }
+
+    (new_positions, new_indices)
+}
 
 /// Supported export formats.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -121,6 +150,7 @@ fn export_obj(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
     writeln!(mtl, "# SynapsCAD MTL Export").map_err(|e| e.to_string())?;
 
     let mut vertex_offset = 1usize; // OBJ indices are 1-based
+    let mut normal_global_offset = 0usize;
 
     for (i, part) in parts.iter().enumerate() {
         let mat_name = format!("part_{}", i + 1);
@@ -138,27 +168,50 @@ fn export_obj(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
         writeln!(obj, "o part_{}", i + 1).map_err(|e| e.to_string())?;
         writeln!(obj, "usemtl {mat_name}").map_err(|e| e.to_string())?;
 
+        let (welded_pos, welded_idx) = weld_vertices(&part.positions, &part.indices);
+
         // Write vertices
-        for pos in &part.positions {
+        for pos in &welded_pos {
             writeln!(obj, "v {} {} {}", pos[0], pos[1], pos[2]).map_err(|e| e.to_string())?;
         }
 
-        // Write normals
-        for n in &part.normals {
-            writeln!(obj, "vn {} {} {}", n[0], n[1], n[2]).map_err(|e| e.to_string())?;
+        // Write per-face normals
+        for tri in welded_idx.chunks(3) {
+            let (a, b, c) = (
+                welded_pos[tri[0] as usize],
+                welded_pos[tri[2] as usize],
+                welded_pos[tri[1] as usize],
+            );
+            let u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+            let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+            let n = [
+                u[1].mul_add(v[2], -(u[2] * v[1])),
+                u[2].mul_add(v[0], -(u[0] * v[2])),
+                u[0].mul_add(v[1], -(u[1] * v[0])),
+            ];
+            let len = n[2].mul_add(n[2], n[0].mul_add(n[0], n[1] * n[1])).sqrt();
+            let normal = if len > 0.0 {
+                [n[0] / len, n[1] / len, n[2] / len]
+            } else {
+                [0.0, 0.0, 1.0]
+            };
+            writeln!(obj, "vn {} {} {}", normal[0], normal[1], normal[2]).map_err(|e| e.to_string())?;
         }
 
         // Write faces (swap v1/v2 for CCW winding)
-        for tri in part.indices.chunks(3) {
+        let normal_offset = normal_global_offset;
+        for (fi, tri) in welded_idx.chunks(3).enumerate() {
             let (a, b, c) = (
                 tri[0] as usize + vertex_offset,
                 tri[2] as usize + vertex_offset,
                 tri[1] as usize + vertex_offset,
             );
-            writeln!(obj, "f {a}//{a} {b}//{b} {c}//{c}").map_err(|e| e.to_string())?;
+            let ni = normal_offset + fi + 1;
+            writeln!(obj, "f {a}//{ni} {b}//{ni} {c}//{ni}").map_err(|e| e.to_string())?;
         }
 
-        vertex_offset += part.positions.len();
+        vertex_offset += welded_pos.len();
+        normal_global_offset += welded_idx.len() / 3;
     }
 
     Ok(())
@@ -218,7 +271,9 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
         let object_id = first_part_id + i;
         let mut mesh = Mesh::new();
 
-        for pos in &part.positions {
+        let (welded_pos, welded_idx) = weld_vertices(&part.positions, &part.indices);
+
+        for pos in &welded_pos {
             mesh.vertices.push(Vertex::new(
                 f64::from(pos[0]),
                 f64::from(pos[1]),
@@ -226,7 +281,7 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
             ));
         }
 
-        for tri_indices in part.indices.chunks(3) {
+        for tri_indices in welded_idx.chunks(3) {
             // Swap v2 and v3 to produce CCW winding (outward normals)
             // required by the 3MF spec; internal mesh uses CW order.
             let mut tri = Triangle::new(
