@@ -176,6 +176,7 @@ fn export_obj(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
         }
 
         // Write per-face normals
+        #[allow(clippy::many_single_char_names)]
         for tri in welded_idx.chunks(3) {
             let (a, b, c) = (
                 welded_pos[tri[0] as usize],
