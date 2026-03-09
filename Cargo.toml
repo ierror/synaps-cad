@@ -44,3 +44,7 @@ all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 too_many_lines = "allow"
+
+# Run clippy and tests before cargo-release creates a version bump commit
+[package.metadata.release]
+pre-release-hook = ["cargo", "clippy", "--", "-D", "warnings"]
