@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use bevy::render::settings::{PowerPreference, RenderCreation, WgpuSettings};
 use bevy::render::RenderPlugin;
 use bevy::window::PresentMode;
+use bevy::winit::WinitSettings;
 use bevy_egui::EguiPlugin;
 
 mod app_config;
@@ -36,6 +37,9 @@ fn main() {
                 synchronous_pipeline_compilation: false,
             })
         )
+        // Only redraw on user input or explicit requests — dramatically reduces
+        // idle CPU usage, especially on Windows.
+        .insert_resource(WinitSettings::desktop_app())
         .add_plugins(EguiPlugin)
         .add_plugins(plugins::SynapScadPlugins)
         .run();

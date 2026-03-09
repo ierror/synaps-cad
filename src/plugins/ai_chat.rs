@@ -343,9 +343,11 @@ fn fetch_models_system(
     mut ai_config: ResMut<AiConfig>,
     mut available: ResMut<AvailableModels>,
     runtime: Res<TokioRuntime>,
+    mut redraw: EventWriter<bevy::window::RequestRedraw>,
 ) {
     // Poll for results from a pending fetch
     if let Some(ref rx_mutex) = available.receiver {
+        redraw.send(bevy::window::RequestRedraw);
         let rx = rx_mutex.lock().unwrap();
         if let Ok(result) = rx.try_recv() {
             drop(rx);
@@ -810,10 +812,14 @@ fn ai_receive_system(
     mut chat_state: ResMut<ChatState>,
     mut scad_code: ResMut<ScadCode>,
     ai_config: Res<AiConfig>,
+    mut redraw: EventWriter<bevy::window::RequestRedraw>,
 ) {
     if !chat_state.is_streaming {
         return;
     }
+
+    // Keep requesting redraws while streaming to poll the channel
+    redraw.send(bevy::window::RequestRedraw);
 
     // Drain all available chunks from the channel
     let chunks: Vec<AiStreamChunk> = {

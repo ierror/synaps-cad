@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::window::RequestRedraw;
 use bevy_egui::{EguiContext, EguiClipboard, EguiContexts, EguiInput, egui};
 
 use crate::plugins::ai_chat::ChatState;
@@ -37,10 +38,11 @@ pub fn fix_clipboard_paste_events(
     }
 
     for mut input in &mut egui_inputs {
-        // Remove bevy_egui's Event::Text for this clipboard paste to prevent double insertion.
-        input.events.retain(|event| {
-            !matches!(event, egui::Event::Text(t) if *t == clipboard_text)
-        });
+        // Remove ALL Event::Text during a paste frame. On Windows, bevy_egui sends
+        // individual per-character Text events that don't match the full clipboard
+        // string, so an exact-match filter fails. Any Text event in a Ctrl+V frame
+        // is an artifact of the key press, not intentional typing.
+        input.events.retain(|event| !matches!(event, egui::Event::Text(_)));
 
         input.events.push(egui::Event::Paste(clipboard_text.replace("\r\n", "\n")));
     }
@@ -59,8 +61,12 @@ pub fn splash_screen_system(
     time: Res<Time>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     keyboard: Res<ButtonInput<KeyCode>>,
+    mut redraw: EventWriter<RequestRedraw>,
 ) {
     if splash.timer <= -SPLASH_FADE_DURATION { return; }
+
+    // Keep requesting redraws while splash animation is active
+    redraw.send(RequestRedraw);
 
     if !splash.dismissing && (mouse_button.just_pressed(MouseButton::Left) || keyboard.get_just_pressed().len() > 0) && splash.timer < SPLASH_DURATION - 0.2 {
         splash.dismissing = true; splash.timer = 0.0;
@@ -93,7 +99,10 @@ pub fn splash_screen_system(
     });
 }
 
-pub fn poll_file_picker_system(mut file_picker: ResMut<FilePickerState>, mut chat_state: ResMut<ChatState>) {
+pub fn poll_file_picker_system(mut file_picker: ResMut<FilePickerState>, mut chat_state: ResMut<ChatState>, mut redraw: EventWriter<RequestRedraw>) {
+    if file_picker.receiver.is_some() {
+        redraw.send(RequestRedraw);
+    }
     let paths = file_picker.receiver.as_ref().and_then(|rx_mutex| rx_mutex.lock().unwrap().try_recv().ok());
 
     if let Some(paths) = paths {
@@ -102,7 +111,10 @@ pub fn poll_file_picker_system(mut file_picker: ResMut<FilePickerState>, mut cha
     }
 }
 
-pub fn poll_export_system(mut export_state: ResMut<ExportState>, last_parts: Res<LastCompiledParts>, mut app_errors: ResMut<AppErrors>) {
+pub fn poll_export_system(mut export_state: ResMut<ExportState>, last_parts: Res<LastCompiledParts>, mut app_errors: ResMut<AppErrors>, mut redraw: EventWriter<RequestRedraw>) {
+    if export_state.receiver.is_some() {
+        redraw.send(RequestRedraw);
+    }
     let maybe_path = export_state.receiver.as_ref().and_then(|rx_mutex| rx_mutex.lock().unwrap().try_recv().ok());
 
     if let Some(maybe_path) = maybe_path {

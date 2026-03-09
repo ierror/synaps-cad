@@ -330,7 +330,13 @@ fn poll_compilation_system(
     model_query: Query<Entity, With<CadModel>>,
     mut polling_timer: ResMut<CompilationPollingTimer>,
     time: Res<Time>,
+    mut redraw: EventWriter<bevy::window::RequestRedraw>,
 ) {
+    // Keep requesting redraws while waiting for compilation results
+    if compilation_state.result_receiver.is_some() {
+        redraw.send(bevy::window::RequestRedraw);
+    }
+
     // Only check for compilation results 10 times per second to save CPU
     if !polling_timer.timer.tick(time.delta()).just_finished() {
         return;
