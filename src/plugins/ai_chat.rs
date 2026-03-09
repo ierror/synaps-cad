@@ -740,13 +740,12 @@ async fn run_ai_stream(
     }
 
     // Workaround for Ollama adapter ignoring auth in genai 0.6.0-beta.3
-    if AdapterKind::from_model(model_name).ok() == Some(AdapterKind::Ollama) {
-        if let Some(key) = api_key
-            && !key.is_empty()
-        {
-            let headers = genai::Headers::from(("Authorization", format!("Bearer {key}")));
-            chat_options.extra_headers = Some(headers);
-        }
+    if AdapterKind::from_model(model_name).ok() == Some(AdapterKind::Ollama)
+        && let Some(key) = api_key
+        && !key.is_empty()
+    {
+        let headers = genai::Headers::from(("Authorization", format!("Bearer {key}")));
+        chat_options.extra_headers = Some(headers);
     }
 
     let stream_response = client

@@ -165,9 +165,21 @@ fn trigger_compilation_system(
     mut scad_code: ResMut<ScadCode>,
     mut compilation_state: ResMut<CompilationState>,
 ) {
-    if !scad_code.dirty || compilation_state.is_compiling {
+    if !scad_code.dirty {
         return;
     }
+
+    // Cancel any running compilation so the new one can start immediately
+    if compilation_state.is_compiling {
+        if let Some(cancel) = &compilation_state.cancel_signal {
+            cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        // Drop the old receiver so the cancelled thread's send simply fails
+        compilation_state.result_receiver = None;
+        compilation_state.cancel_signal = None;
+        compilation_state.is_compiling = false;
+    }
+
     scad_code.dirty = false;
     compilation_state.is_compiling = true;
 
