@@ -338,7 +338,7 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
             state.store(ui.ctx(), id);
         }
 
-        egui::ScrollArea::vertical().id_salt("chat_scroll").max_height(scroll_height).stick_to_bottom(true).show(ui, |ui| {
+        egui::ScrollArea::both().id_salt("chat_scroll").max_height(scroll_height).stick_to_bottom(true).show(ui, |ui| {
             let visible_messages = &chat_state.messages[chat_state.session_start..];
             let msg_count = visible_messages.len();
             let mut img_to_remove: Option<(usize, usize)> = None;
