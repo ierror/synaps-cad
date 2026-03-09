@@ -176,23 +176,22 @@ fn export_obj(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
         }
 
         // Write per-face normals
-        #[allow(clippy::many_single_char_names)]
         for tri in welded_idx.chunks(3) {
-            let (a, b, c) = (
+            let verts = [
                 welded_pos[tri[0] as usize],
                 welded_pos[tri[2] as usize],
                 welded_pos[tri[1] as usize],
-            );
-            let u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-            let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-            let n = [
-                u[1].mul_add(v[2], -(u[2] * v[1])),
-                u[2].mul_add(v[0], -(u[0] * v[2])),
-                u[0].mul_add(v[1], -(u[1] * v[0])),
             ];
-            let len = n[2].mul_add(n[2], n[0].mul_add(n[0], n[1] * n[1])).sqrt();
+            let edge1 = [verts[1][0] - verts[0][0], verts[1][1] - verts[0][1], verts[1][2] - verts[0][2]];
+            let edge2 = [verts[2][0] - verts[0][0], verts[2][1] - verts[0][1], verts[2][2] - verts[0][2]];
+            let cross = [
+                edge1[1].mul_add(edge2[2], -(edge1[2] * edge2[1])),
+                edge1[2].mul_add(edge2[0], -(edge1[0] * edge2[2])),
+                edge1[0].mul_add(edge2[1], -(edge1[1] * edge2[0])),
+            ];
+            let len = cross[2].mul_add(cross[2], cross[0].mul_add(cross[0], cross[1] * cross[1])).sqrt();
             let normal = if len > 0.0 {
-                [n[0] / len, n[1] / len, n[2] / len]
+                [cross[0] / len, cross[1] / len, cross[2] / len]
             } else {
                 [0.0, 0.0, 1.0]
             };
