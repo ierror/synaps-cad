@@ -3,6 +3,34 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.9.0] - 2026-03-09
+
+### Added
+
+- **Performance Monitor Overlay** — toggleable overlay showing frame times, CPU, and memory usage for diagnostics.
+- **Chat Auto-Scroll** — chat automatically scrolls to the bottom when sending a message, so the streaming response is immediately visible.
+- **Send Button Validation** — the send button is disabled when no model is configured, with a hint to open AI Settings.
+
+### Fixed
+
+- **Gemini Authentication** — fixed 401 errors when streaming chat with Gemini by scoping the Ollama Bearer auth workaround to Ollama models only (was incorrectly applied to all providers).
+- **Clipboard Paste** — fixed clipboard paste events for cross-platform compatibility (#1).
+- **Model Reload on Config Change** — changing API key or Ollama host now reliably triggers a model list reload on focus loss.
+- **API Key Trimming** — API keys are now trimmed of whitespace when entered and when loaded from storage.
+- **Model Warning Accuracy** — "Previously configured model is no longer available" warning now only appears when models were successfully fetched but the configured model is missing, not on auth/network errors.
+
+### Changed
+
+- **Compilation Restarts on Code Change** — undo, redo, and other code-changing actions now cancel any running compilation and immediately start a fresh one, instead of waiting for the current compile to finish.
+- **AI Temperature Default** — default temperature set to 0.0 for more deterministic responses.
+- **Settings Dialog** — can now be closed even without a configured model; settings only auto-open on first launch.
+
+### Improved
+
+- **Performance Optimizations** — VSync, reduced compilation polling frequency, and optimized UI redraws for lower CPU usage.
+- **Code Header Layout** — fixed render button order for better narrow panel support.
+
+
 ## [0.8.0] - 2026-03-08
 
 ### Added
