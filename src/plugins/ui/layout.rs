@@ -247,7 +247,10 @@ fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker:
         let mut attach_clicked = false;
 
         let _input_resp = ui.horizontal_top(|ui| {
-            let resp = ui.add(egui::TextEdit::multiline(&mut chat_state.input_buffer).hint_text("Ask the AI assistant...").desired_width(ui.available_width() - 68.0).desired_rows(3).lock_focus(true));
+            let text_width = ui.available_width() - 68.0;
+            let resp = egui::ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
+                ui.add(egui::TextEdit::multiline(&mut chat_state.input_buffer).hint_text("Ask the AI assistant...").desired_width(text_width).desired_rows(3).lock_focus(true))
+            }).inner;
             ui.vertical(|ui| {
                 if chat_state.is_streaming {
                     if ui.button("⏹").clicked() { chat_state.is_streaming = false; chat_state.streaming_start = None; chat_state.stream_receiver = None; chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle; }
