@@ -63,10 +63,12 @@ fn export_stl(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
 
     for part in parts {
         for tri in part.indices.chunks(3) {
+            // Swap v1/v2 to produce CCW winding (outward normals);
+            // internal mesh uses CW order.
             let (v0, v1, v2) = (
                 part.positions[tri[0] as usize],
-                part.positions[tri[1] as usize],
                 part.positions[tri[2] as usize],
+                part.positions[tri[1] as usize],
             );
             // Compute face normal
             let u = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
@@ -146,12 +148,12 @@ fn export_obj(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
             writeln!(obj, "vn {} {} {}", n[0], n[1], n[2]).map_err(|e| e.to_string())?;
         }
 
-        // Write faces
+        // Write faces (swap v1/v2 for CCW winding)
         for tri in part.indices.chunks(3) {
             let (a, b, c) = (
                 tri[0] as usize + vertex_offset,
-                tri[1] as usize + vertex_offset,
                 tri[2] as usize + vertex_offset,
+                tri[1] as usize + vertex_offset,
             );
             writeln!(obj, "f {a}//{a} {b}//{b} {c}//{c}").map_err(|e| e.to_string())?;
         }
@@ -197,6 +199,9 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
 
     // Add color group if we have any colors
     if !colors.is_empty() {
+        model
+            .required_extensions
+            .push(lib3mf::Extension::Material);
         let cg = lib3mf::ColorGroup {
             id: color_group_id,
             colors,
@@ -218,10 +223,12 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
         }
 
         for tri_indices in part.indices.chunks(3) {
+            // Swap v2 and v3 to produce CCW winding (outward normals)
+            // required by the 3MF spec; internal mesh uses CW order.
             let mut tri = Triangle::new(
                 tri_indices[0] as usize,
-                tri_indices[1] as usize,
                 tri_indices[2] as usize,
+                tri_indices[1] as usize,
             );
             // Assign color to triangle
             if let Some(Some(color_idx)) = part_color_indices.get(i) {
