@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.9.1] - 2026-03-09
+
+### Fixed
+
+- **3MF Export: Non-Manifold Mesh** — exported meshes now weld shared vertices, eliminating "non-manifold" warnings in slicers like Bambu Studio.
+- **3MF Export: Inverted Normals** — fixed triangle winding order (CW→CCW) in STL, OBJ, and 3MF exports; resolves Bambu Studio's "too small, may be in meters" false positive caused by negative signed volume.
+- **3MF Export: Multiple Objects Warning** — restructured 3MF output to use a single assembly object with component references instead of separate build items, preventing "multiple objects at different heights" warnings.
+- **3MF Export: Missing Material Namespace** — added required `xmlns:m` namespace declaration when color groups are present, fixing invalid XML in exported files.
+- **Windows Paste** — fixed pasting full text (e.g. API tokens) on Windows; previously only the first character appeared due to per-character event filtering.
+- **Windows CPU Usage** — switched to reactive rendering mode (`WinitSettings::desktop_app()`) so the app only redraws on user input or async events, dramatically reducing idle CPU usage.
+
+### Improved
+
+- **Chat Panel Scrolling** — chat responses now scroll horizontally (like the code editor) so wide content no longer hides the compile button and other controls.
+- **Chat Input Scrolling** — chat input area now scrolls vertically with a max height, preventing the input from expanding unboundedly with large text.
+
+
 ## [0.9.0] - 2026-03-09
 
 ### Added
