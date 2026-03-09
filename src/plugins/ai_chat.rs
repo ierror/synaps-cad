@@ -316,12 +316,7 @@ impl Plugin for AiChatPlugin {
             .add_systems(
                 Update,
                 (
-                    fetch_models_system.run_if(
-                        // Only run when loading or when adapter config changed
-                        |available: Res<AvailableModels>| {
-                            available.loading || available.receiver.is_some()
-                        }
-                    ),
+                    fetch_models_system,
                     ai_send_system,
                     ai_receive_system,
                     ai_verify_system,
@@ -346,6 +341,9 @@ fn fetch_models_system(
             available.receiver = None;
             match result {
                 Ok(models) => {
+                    if cfg!(debug_assertions) {
+                        eprintln!("[DEBUG] Received {} models from background fetch", models.len());
+                    }
                     available.error = None;
                     // Restore pending model if it's in the fetched list
                     if let Some(pending) = available.pending_model.take() {
@@ -370,11 +368,25 @@ fn fetch_models_system(
         }
     }
 
-    // Trigger a new fetch if adapter, API key, or Ollama host changed
+    // Trigger a new fetch if adapter changed or force reload requested  
     let current_key = ai_config.api_key().to_string();
-    let key_changed = available.last_api_key != current_key;
-    let host_changed = available.last_ollama_host != ai_config.last_ollama_host;
-    if (available.last_adapter != ai_config.adapter_name || key_changed || (ai_config.adapter_name == "Ollama" && host_changed)) && !available.loading {
+    let adapter_changed = available.last_adapter != ai_config.adapter_name;
+    let force_reload = available.last_api_key == "force_reload";
+    
+    if cfg!(debug_assertions) {
+        if adapter_changed {
+            eprintln!("[DEBUG] Adapter changed from '{}' to '{}', triggering model fetch", available.last_adapter, ai_config.adapter_name);
+        }
+        if force_reload {
+            eprintln!("[DEBUG] Force reload requested, triggering model fetch");
+        }
+    }
+    
+    if (adapter_changed || force_reload) && !available.loading {
+        if cfg!(debug_assertions) {
+            eprintln!("[DEBUG] Starting model fetch for adapter '{}' with key length {}", ai_config.adapter_name, current_key.len());
+        }
+        
         // Clear stale models immediately so the UI doesn't show old data
         available.models.clear();
         // Save current model name to restore after fetch if it's still valid
@@ -398,7 +410,16 @@ fn fetch_models_system(
         available.receiver = Some(Mutex::new(rx));
 
         runtime.0.spawn(async move {
+            if cfg!(debug_assertions) {
+                eprintln!("[DEBUG] Fetching models for '{}' in background thread", adapter_name);
+            }
             let result = fetch_model_names(&adapter_name, api_key.as_deref(), &ollama_host).await;
+            if cfg!(debug_assertions) {
+                match &result {
+                    Ok(models) => eprintln!("[DEBUG] Successfully fetched {} models", models.len()),
+                    Err(e) => eprintln!("[DEBUG] Model fetch failed: {}", e),
+                }
+            }
             let _ = tx.send(result);
         });
     }

@@ -630,6 +630,11 @@ fn render_settings_dialog(
                             }
                             ai_config.ollama_host.clone_from(&host);
                             ai_config.last_ollama_host = host;
+                            
+                            // Reload models when Ollama host changes
+                            if res.lost_focus() {
+                                available_models.last_api_key = "force_reload".to_string();
+                            }
                         }
                     });
                 }
@@ -648,11 +653,17 @@ fn render_settings_dialog(
                         );
                     } else {
                         let key = ai_config.api_key_mut();
-                        ui.add(
+                        let api_key_response = ui.add(
                             egui::TextEdit::singleline(key)
                                 .password(true)
                                 .hint_text(if env_set { "Override env var" } else { "Enter API key" }),
                         );
+                        
+                        // Reload models when API key field loses focus
+                        if api_key_response.lost_focus() {
+                            // Force model reload by marking the API key as changed
+                            available_models.last_api_key = "force_reload".to_string();
+                        }
                     }
                 });
                 ui.horizontal(|ui| {
