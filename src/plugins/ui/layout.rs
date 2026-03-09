@@ -62,7 +62,7 @@ pub fn ui_layout_system(
         render_ai_assistant_header(ui, &mut chat_state, &mut ai_config, &mut available_models, &mut settings_open);
         ui.separator();
 
-        render_chat_input(ui, &mut chat_state, &mut file_picker, &runtime);
+        render_chat_input(ui, &mut chat_state, &mut file_picker, &runtime, ai_config.model_name.is_empty());
         render_pending_attachments(ui, &mut chat_state, &mut preview_state);
 
         let total_remaining = ui.available_height();
@@ -93,7 +93,7 @@ pub fn ui_layout_system(
             ctx.data_mut(|d| d.insert_persisted(panel_id, egui::containers::panel::PanelState { rect: clamped_rect }));
             occupied.left = panel_width_before;
         }
-    if available_models.needs_configuration { settings_open.0 = true; }
+    if available_models.needs_configuration && available_models.last_adapter.is_empty() { settings_open.0 = true; }
     if settings_open.0 && ctx.input(|i| i.key_pressed(egui::Key::Escape)) { settings_open.0 = false; }
 
     render_settings_dialog(ctx, &mut settings_open, &mut ai_config, &mut available_models);
@@ -164,6 +164,9 @@ fn render_ai_assistant_header(ui: &mut egui::Ui, chat_state: &mut ChatState, ai_
             // Provider selector
             let mut current_adapter = ai_config.adapter_name.clone();
             let combo_w = if is_narrow { 70.0 } else { 80.0 };
+            if ai_config.model_name.is_empty() && !available_models.loading {
+                ui.colored_label(egui::Color32::from_rgb(255, 180, 50), "⚠ Select model in ⚙");
+            }
             if egui::ComboBox::from_id_salt("provider_select_main")
                 .selected_text(&current_adapter)
                 .width(combo_w)
@@ -237,7 +240,7 @@ fn truncate_filename(name: &str, max_chars: usize) -> String {
     format!("{truncated}…")
 }
 
-fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker: &mut crate::plugins::ui::resources::FilePickerState, runtime: &TokioRuntime) {
+fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker: &mut crate::plugins::ui::resources::FilePickerState, runtime: &TokioRuntime, no_model: bool) {
     ui.horizontal_wrapped(|ui| {
         let mut send_clicked = false;
         let mut enter_pressed = false;
@@ -249,8 +252,10 @@ fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker:
                 if chat_state.is_streaming {
                     if ui.button("⏹").clicked() { chat_state.is_streaming = false; chat_state.streaming_start = None; chat_state.stream_receiver = None; chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle; }
                 } else {
-                    send_clicked = ui.button("⬆").clicked();
-                    enter_pressed = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.shift);
+                    let send_btn = ui.add_enabled(!no_model, egui::Button::new("⬆"))
+                        .on_disabled_hover_text("Configure a model in ⚙ AI Settings first");
+                    send_clicked = send_btn.clicked();
+                    enter_pressed = !no_model && resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.shift);
                 }
                 attach_clicked = ui.button("📎").clicked();
             });
