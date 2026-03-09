@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_egui::{EguiInputSet, EguiPreUpdateSet};
 
 pub mod resources;
 pub mod theme;
@@ -25,6 +26,12 @@ impl Plugin for UiPlugin {
             .init_resource::<resources::ExportState>()
             .init_resource::<resources::SplashScreen>()
             .add_systems(Startup, theme::setup_egui_theme)
+            .add_systems(
+                PreUpdate,
+                systems::fix_clipboard_paste_events
+                    .after(EguiInputSet::WriteEguiEvents)
+                    .before(EguiPreUpdateSet::BeginPass),
+            )
             .add_systems(
                 Update,
                 (

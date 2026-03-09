@@ -1,11 +1,50 @@
 use bevy::prelude::*;
-use bevy_egui::{EguiContexts, egui};
+use bevy_egui::{EguiContext, EguiClipboard, EguiContexts, EguiInput, egui};
 
 use crate::plugins::ai_chat::ChatState;
 use crate::plugins::compilation::LastCompiledParts;
 use crate::plugins::ui::resources::{FilePickerState, AppErrors, ExportState, SplashScreen};
 use crate::plugins::ui::utils::{load_image_as_chat_image, IMAGE_EXTENSIONS};
 pub use crate::plugins::ui::theme::{set_window_icon, SPLASH_IMAGE_BYTES};
+
+/// Fixes clipboard paste events for cross-platform compatibility.
+///
+/// `bevy_egui` sends `Event::Text` for clipboard paste, but the correct egui convention
+/// (used by the official `egui-winit` integration) is `Event::Paste`. On macOS this is
+/// masked because the OS delivers paste content through IME, but on Windows the explicit
+/// clipboard handling is the only path — and it can also fail when the logical key mapping
+/// doesn't produce `egui::Key::V` (e.g. non-Latin keyboard layouts).
+///
+/// This system detects Ctrl/Cmd+V via physical key codes (layout-independent), replaces
+/// any `Event::Text` from bevy_egui's clipboard handler with `Event::Paste`, and adds
+/// `Event::Paste` itself when bevy_egui's handler was skipped entirely.
+pub fn fix_clipboard_paste_events(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut egui_inputs: Query<&mut EguiInput, With<EguiContext>>,
+    mut egui_clipboard: ResMut<EguiClipboard>,
+) {
+    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
+    let cmd = keyboard.pressed(KeyCode::SuperLeft) || keyboard.pressed(KeyCode::SuperRight);
+    let paste_modifier = if cfg!(target_os = "macos") { cmd } else { ctrl };
+
+    if !paste_modifier || !keyboard.just_pressed(KeyCode::KeyV) {
+        return;
+    }
+
+    let Some(clipboard_text) = egui_clipboard.get_text() else { return };
+    if clipboard_text.is_empty() {
+        return;
+    }
+
+    for mut input in &mut egui_inputs {
+        // Remove bevy_egui's Event::Text for this clipboard paste to prevent double insertion.
+        input.events.retain(|event| {
+            !matches!(event, egui::Event::Text(t) if *t == clipboard_text)
+        });
+
+        input.events.push(egui::Event::Paste(clipboard_text.replace("\r\n", "\n")));
+    }
+}
 
 pub use crate::plugins::ui::layout::ui_layout_system;
 pub use crate::plugins::ui::viewport::{viewport_toolbar_system, cheatsheet_system, draw_part_labels, draw_axis_indicator};
