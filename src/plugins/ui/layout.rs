@@ -301,6 +301,7 @@ fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker:
             chat_state.history_index = None; chat_state.history_draft = None;
             chat_state.messages.push(crate::plugins::ai_chat::ChatMessage { role: "user".into(), content: user_msg, thinking: None, images, auto_generated: false, is_error: false });
             chat_state.input_buffer.clear(); chat_state.is_streaming = true; chat_state.streaming_start = Some(std::time::Instant::now());
+            chat_state.scroll_to_bottom = true;
         }
     });
 }
@@ -322,6 +323,15 @@ fn render_chat_messages(ui: &mut egui::Ui, chat_state: &mut ChatState, chat_heig
         };
 
         let scroll_height = (chat_height - status_height - ui.spacing().item_spacing.y).max(20.0);
+
+        // Force scroll to bottom when user sends a message
+        if chat_state.scroll_to_bottom {
+            chat_state.scroll_to_bottom = false;
+            let id = egui::Id::new("chat_scroll");
+            let mut state = egui::scroll_area::State::default();
+            state.offset.y = f32::MAX;
+            state.store(ui.ctx(), id);
+        }
 
         egui::ScrollArea::vertical().id_salt("chat_scroll").max_height(scroll_height).stick_to_bottom(true).show(ui, |ui| {
             let visible_messages = &chat_state.messages[chat_state.session_start..];

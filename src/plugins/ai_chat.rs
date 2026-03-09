@@ -272,6 +272,8 @@ pub struct ChatState {
     pub session_start: usize,
     /// When streaming started, used to display elapsed time.
     pub streaming_start: Option<std::time::Instant>,
+    /// Set to true when the chat should scroll to the bottom (e.g. on send).
+    pub scroll_to_bottom: bool,
 }
 
 impl Default for ChatState {
@@ -288,6 +290,7 @@ impl Default for ChatState {
             verification: VerificationState::Idle,
             session_start: 0,
             streaming_start: None,
+            scroll_to_bottom: false,
         }
     }
 }
