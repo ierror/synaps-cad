@@ -198,7 +198,8 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
     }
 
     // Add color group if we have any colors
-    if !colors.is_empty() {
+    let has_colors = !colors.is_empty();
+    if has_colors {
         model
             .required_extensions
             .push(lib3mf::Extension::Material);
@@ -210,8 +211,11 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
         model.resources.color_groups.push(cg);
     }
 
+    // Each part becomes a sub-object; a single assembly object references
+    // them via <components> so slicers treat them as one model.
+    let first_part_id = if has_colors { 2 } else { 1 };
     for (i, part) in parts.iter().enumerate() {
-        let object_id = i + 2; // start at 2 (color group is 1)
+        let object_id = first_part_id + i;
         let mut mesh = Mesh::new();
 
         for pos in &part.positions {
@@ -242,7 +246,23 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
         object.name = Some(format!("Part {}", i + 1));
         object.mesh = Some(mesh);
         model.resources.objects.push(object);
-        model.build.items.push(BuildItem::new(object_id));
+    }
+
+    // If multiple parts, create an assembly object that groups them as
+    // components so slicers see a single model instead of separate objects.
+    if parts.len() > 1 {
+        let assembly_id = first_part_id + parts.len();
+        let mut assembly = Object::new(assembly_id);
+        assembly.name = Some("SynapsCAD Model".to_string());
+        for i in 0..parts.len() {
+            assembly
+                .components
+                .push(lib3mf::Component::new(first_part_id + i));
+        }
+        model.resources.objects.push(assembly);
+        model.build.items.push(BuildItem::new(assembly_id));
+    } else if !parts.is_empty() {
+        model.build.items.push(BuildItem::new(first_part_id));
     }
 
     model
