@@ -316,7 +316,12 @@ impl Plugin for AiChatPlugin {
             .add_systems(
                 Update,
                 (
-                    fetch_models_system,
+                    fetch_models_system.run_if(
+                        // Only run when loading or when adapter config changed
+                        |available: Res<AvailableModels>| {
+                            available.loading || available.receiver.is_some()
+                        }
+                    ),
                     ai_send_system,
                     ai_receive_system,
                     ai_verify_system,

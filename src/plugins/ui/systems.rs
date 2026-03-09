@@ -3,7 +3,7 @@ use bevy_egui::{EguiContext, EguiClipboard, EguiContexts, EguiInput, egui};
 
 use crate::plugins::ai_chat::ChatState;
 use crate::plugins::compilation::LastCompiledParts;
-use crate::plugins::ui::resources::{FilePickerState, AppErrors, ExportState, SplashScreen};
+use crate::plugins::ui::resources::{FilePickerState, AppErrors, ExportState, SplashScreen, PerformanceMonitor};
 use crate::plugins::ui::utils::{load_image_as_chat_image, IMAGE_EXTENSIONS};
 pub use crate::plugins::ui::theme::{set_window_icon, SPLASH_IMAGE_BYTES};
 
@@ -16,8 +16,8 @@ pub use crate::plugins::ui::theme::{set_window_icon, SPLASH_IMAGE_BYTES};
 /// doesn't produce `egui::Key::V` (e.g. non-Latin keyboard layouts).
 ///
 /// This system detects Ctrl/Cmd+V via physical key codes (layout-independent), replaces
-/// any `Event::Text` from bevy_egui's clipboard handler with `Event::Paste`, and adds
-/// `Event::Paste` itself when bevy_egui's handler was skipped entirely.
+/// any `Event::Text` from `bevy_egui`'s clipboard handler with `Event::Paste`, and adds
+/// `Event::Paste` itself when `bevy_egui`'s handler was skipped entirely.
 pub fn fix_clipboard_paste_events(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut egui_inputs: Query<&mut EguiInput, With<EguiContext>>,
@@ -122,4 +122,116 @@ pub fn file_drop_system(mut dnd_events: EventReader<bevy::window::FileDragAndDro
             && path_buf.extension().and_then(|e| e.to_str()).is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
                 && let Some(img) = load_image_as_chat_image(path_buf) { chat_state.pending_images.push(img); }
     }
+}
+
+/// Performance monitoring system that tracks frame times and displays debug overlay.
+pub fn performance_monitor_system(
+    mut contexts: EguiContexts,
+    mut perf_monitor: ResMut<PerformanceMonitor>,
+    time: Res<Time>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    // Toggle performance overlay with Ctrl+P
+    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
+    if ctrl && keyboard.just_pressed(KeyCode::KeyP) {
+        perf_monitor.show_overlay = !perf_monitor.show_overlay;
+    }
+
+    // Record current frame time
+    let frame_time_ms = time.delta_secs() * 1000.0;
+    perf_monitor.record_frame_time(frame_time_ms);
+
+    // Show performance overlay if enabled
+    if !perf_monitor.show_overlay {
+        return;
+    }
+
+    let Some(ctx) = contexts.try_ctx_mut() else {
+        return;
+    };
+
+    egui::Window::new("Performance Monitor")
+        .default_open(false)
+        .resizable(true)
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 10.0))
+        .show(ctx, |ui| {
+            ui.label("Press Ctrl+P to toggle this overlay");
+            ui.separator();
+            
+            let current_fps = perf_monitor.current_fps();
+            let avg_frame_time = perf_monitor.average_frame_time();
+            
+            ui.label(format!("FPS: {current_fps:.1}"));
+            ui.label(format!("Frame Time: {avg_frame_time:.2} ms"));
+            ui.label(format!("Est. CPU: {:.1}%", perf_monitor.cpu_usage));
+            
+            ui.separator();
+            ui.label("Frame Time Graph (last 60 frames):");
+            
+            if !perf_monitor.frame_times.is_empty() {
+                let min_time = perf_monitor.frame_times.iter().copied().fold(f32::INFINITY, f32::min);
+                let max_time = perf_monitor.frame_times.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                
+                let plot_height = 60.0;
+                let plot_width = 200.0;
+                
+                let (response, painter) = ui.allocate_painter(
+                    egui::vec2(plot_width, plot_height), 
+                    egui::Sense::hover()
+                );
+                
+                // Draw background
+                painter.rect_filled(response.rect, 2.0, egui::Color32::from_gray(30));
+                
+                // Draw frame time line
+                if perf_monitor.frame_times.len() > 1 {
+                    let points: Vec<egui::Pos2> = perf_monitor.frame_times
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &time)| {
+                            #[allow(clippy::cast_precision_loss)]
+                            let x = (i as f32 / (perf_monitor.frame_times.len() - 1) as f32).mul_add(plot_width, response.rect.min.x);
+                            let y = if max_time > min_time {
+                                ((time - min_time) / (max_time - min_time)).mul_add(-plot_height, response.rect.max.y)
+                            } else {
+                                response.rect.center().y
+                            };
+                            egui::pos2(x, y)
+                        })
+                        .collect();
+                    
+                    for window in points.windows(2) {
+                        painter.line_segment([window[0], window[1]], egui::Stroke::new(1.0, egui::Color32::GREEN));
+                    }
+                    
+                    // Draw 16.67ms line (60 FPS target)
+                    if max_time > 16.67 && min_time < 16.67 {
+                        let target_y = ((16.67 - min_time) / (max_time - min_time)).mul_add(-plot_height, response.rect.max.y);
+                        painter.line_segment(
+                            [egui::pos2(response.rect.min.x, target_y), egui::pos2(response.rect.max.x, target_y)],
+                            egui::Stroke::new(1.0, egui::Color32::RED)
+                        );
+                    }
+                }
+                
+                ui.label(format!("Range: {min_time:.1} - {max_time:.1} ms"));
+                
+                // Color code the performance status
+                let status_color = if current_fps < 30.0 {
+                    egui::Color32::RED
+                } else if current_fps < 55.0 {
+                    egui::Color32::YELLOW
+                } else {
+                    egui::Color32::GREEN
+                };
+                
+                ui.colored_label(status_color, if current_fps < 30.0 {
+                    "Performance: Poor"
+                } else if current_fps < 55.0 {
+                    "Performance: Fair"
+                } else {
+                    "Performance: Good"
+                });
+            }
+        });
 }

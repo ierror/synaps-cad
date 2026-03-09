@@ -60,12 +60,24 @@ pub fn setup_egui_theme(mut contexts: EguiContexts) {
 
     ctx.set_visuals(visuals);
 
-    // Spacing
+    // Spacing and performance optimizations
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
     style.spacing.button_padding = egui::vec2(10.0, 4.0);
     style.spacing.window_margin = egui::Margin::same(12);
+    
+    // Reduce tessellation complexity for better performance
+    style.visuals.clip_rect_margin = 3.0;  // Reduce clipping margin
+    style.animation_time = 0.1;  // Reduce animation time to reduce redraws
+    style.explanation_tooltips = false;  // Disable tooltips to reduce hover redraws
+    
     ctx.set_style(style);
+    
+    // Set tessellation options for better performance
+    ctx.tessellation_options_mut(|options| {
+        options.feathering_size_in_pixels = 1.0;  // Reduce feathering for better performance
+        options.round_text_to_pixels = true;  // Align text to pixels for better caching
+    });
 }
 
 pub fn set_window_icon(

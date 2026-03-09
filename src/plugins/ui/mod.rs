@@ -21,6 +21,7 @@ impl Plugin for UiPlugin {
             .init_resource::<resources::FilePickerState>()
             .init_resource::<resources::ImagePreviewState>()
             .init_resource::<AppErrors>()
+            .init_resource::<resources::PerformanceMonitor>()
             .init_resource::<resources::SettingsDialogOpen>()
             .init_resource::<resources::CheatsheetOpen>()
             .init_resource::<resources::ExportState>()
@@ -45,6 +46,7 @@ impl Plugin for UiPlugin {
                     draw_part_labels,
                     draw_axis_indicator,
                     file_drop_system,
+                    performance_monitor_system,
                 ),
             );
     }

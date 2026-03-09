@@ -126,6 +126,21 @@ pub struct LastCompiledParts {
     pub parts: Vec<StlMeshData>,
 }
 
+/// Timer to reduce compilation polling frequency and save CPU
+#[derive(Resource)]
+pub struct CompilationPollingTimer {
+    timer: Timer,
+}
+
+impl Default for CompilationPollingTimer {
+    fn default() -> Self {
+        Self {
+            // Poll 10 times per second instead of 60+ times per second
+            timer: Timer::from_seconds(0.1, TimerMode::Repeating),
+        }
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct LoadedModel {
     pub entity: Option<Entity>,
@@ -137,6 +152,7 @@ impl Plugin for CompilationPlugin {
             .init_resource::<LoadedModel>()
             .init_resource::<ModelViews>()
             .init_resource::<LastCompiledParts>()
+            .init_resource::<CompilationPollingTimer>()
             .init_resource::<PartLabelVisibility>()
             .add_systems(
                 Update,
@@ -300,7 +316,14 @@ fn poll_compilation_system(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut orbit: ResMut<OrbitCamera>,
     model_query: Query<Entity, With<CadModel>>,
+    mut polling_timer: ResMut<CompilationPollingTimer>,
+    time: Res<Time>,
 ) {
+    // Only check for compilation results 10 times per second to save CPU
+    if !polling_timer.timer.tick(time.delta()).just_finished() {
+        return;
+    }
+    
     let result = {
         let Some(ref rx_mutex) = compilation_state.result_receiver else {
             return;
