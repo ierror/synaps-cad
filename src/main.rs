@@ -2,7 +2,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use bevy::prelude::*;
-use bevy::render::settings::{PowerPreference, RenderCreation, WgpuSettings};
+use bevy::render::settings::{RenderCreation, WgpuSettings};
 use bevy::render::RenderPlugin;
 use bevy::window::PresentMode;
 use bevy::winit::WinitSettings;
@@ -27,13 +27,7 @@ fn main() {
                 ..default()
             })
             .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(
-                    WgpuSettings {
-                        // Prefer integrated GPU for power efficiency if available
-                        power_preference: PowerPreference::LowPower,
-                        ..default()
-                    }
-                ),
+                render_creation: RenderCreation::Automatic(WgpuSettings::default()),
                 synchronous_pipeline_compilation: false,
             })
         )
