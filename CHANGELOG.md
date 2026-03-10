@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.9.2] - 2026-03-10
+
+### Fixed
+
+- **Windows GPU Selection** — removed `PowerPreference::LowPower` which forced the integrated GPU on Windows; wgpu now lets the OS/driver pick the best adapter, fixing high CPU usage on systems where the iGPU driver falls back to software rasterization.
+
+
 ## [0.9.1] - 2026-03-09
 
 ### Fixed
