@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **Custom Endpoint URLs for All AI Providers** — every provider now has an "Endpoint URL" field in AI Settings, enabling use of custom/self-hosted API endpoints (e.g. LM Studio, vLLM, Azure ML Studio, LiteLLM). Previously only Ollama supported a custom host. The field shows the provider's default URL as placeholder text. Model listing for custom endpoints uses the OpenAI-compatible `/models` format with automatic fallback to Ollama format.
+- **Custom Endpoint URLs for All AI Providers** — every provider now has an "Endpoint URL" field in AI Settings, enabling use of custom/self-hosted API endpoints (e.g. LM Studio, vLLM, Azure ML Studio, LiteLLM). Previously only Ollama supported a custom host. The field shows the provider's default URL as placeholder text. Model listing for custom endpoints uses the OpenAI-compatible `/models` format with automatic fallback to Ollama format. See features request #2 for details.
 
 ### Changed
 
