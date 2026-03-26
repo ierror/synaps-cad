@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Compile Button Requires Double Click After Edit** — fixed update scheduling so editor changes are always applied before compile triggering. A single click on `Compile` now reliably compiles the latest code without needing a second click.
 - **Custom Ollama Host Without API Key** — fixed a bug where setting a custom Ollama host was silently ignored when no API key was configured, falling back to the default `localhost:11434` endpoint.
 - **Adapter Kind Override** — the user-selected provider now always determines the API format used (e.g. OpenAI's `/chat/completions` vs Ollama's `/api/chat`), regardless of what the genai library infers from the model name. This fixes issues when using non-standard model names with providers like LM Studio.
 - **Model List Empty on Startup** — the model selector was empty after app restart because the model fetch system's `run_if` guard prevented it from running on the first frame. Models are now fetched automatically on startup.

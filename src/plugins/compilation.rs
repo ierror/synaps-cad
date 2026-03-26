@@ -156,10 +156,21 @@ impl Plugin for CompilationPlugin {
             .init_resource::<PartLabelVisibility>()
             .add_systems(
                 Update,
-                (trigger_compilation_system, poll_compilation_system).chain(),
+                (trigger_compilation_system, poll_compilation_system)
+                    .chain()
+                    .in_set(CompilationSystemSet),
+            )
+            // Ensure UI/editor systems can mark `ScadCode::dirty` before we decide
+            // whether to trigger compilation in this frame.
+            .configure_sets(
+                Update,
+                CompilationSystemSet.after(crate::plugins::ui::layout::ui_layout_system),
             );
     }
 }
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct CompilationSystemSet;
 
 fn trigger_compilation_system(
     mut scad_code: ResMut<ScadCode>,
