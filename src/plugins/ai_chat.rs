@@ -189,7 +189,7 @@ impl Default for AiConfig {
             model_per_provider: std::collections::HashMap::new(),
             custom_urls,
             system_prompt: DEFAULT_SYSTEM_PROMPT.into(),
-            temperature: 0.0,
+            temperature: 0.1,
             max_verification_rounds: 2,
             extended_thinking: false,
         }

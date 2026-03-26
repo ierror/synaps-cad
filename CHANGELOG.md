@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file.
 
 - **Custom Endpoint URLs for All AI Providers** — every provider now has an "Endpoint URL" field in AI Settings, enabling use of custom/self-hosted API endpoints (e.g. LM Studio, vLLM, Azure ML Studio, LiteLLM). Previously only Ollama supported a custom host. The field shows the provider's default URL as placeholder text. Model listing for custom endpoints uses the OpenAI-compatible `/models` format with automatic fallback to Ollama format.
 
+### Changed
+
+- **Default Temperature** — changed the default temperature from 0.0 to 0.1 for new installations to encourage more creative responses while still being mostly deterministic. Existing users keep their current temperature setting.
+
 ### Fixed
 
 - **Custom Ollama Host Without API Key** — fixed a bug where setting a custom Ollama host was silently ignored when no API key was configured, falling back to the default `localhost:11434` endpoint.
