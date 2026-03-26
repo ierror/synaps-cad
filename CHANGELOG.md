@@ -8,10 +8,14 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **Custom Endpoint URLs for All AI Providers** — every provider now has an "Endpoint URL" field in AI Settings, enabling use of custom/self-hosted API endpoints (e.g. LM Studio, vLLM, Azure ML Studio, LiteLLM). Previously only Ollama supported a custom host. The field shows the provider's default URL as placeholder text. Model listing for custom endpoints uses the OpenAI-compatible `/models` format with automatic fallback to Ollama format. See features request #2 for details.
+- **API Key Visibility Toggle** — added an eye icon button next to the API key field to toggle between hidden (default) and visible text.
+- **Automatic Error Recovery** — when AI-generated code causes a compilation error (e.g. "Parse error: unexpected token"), the error is automatically sent back to the AI with a request to fix the issue. The AI then produces corrected code, creating a self-healing feedback loop.
 
 ### Changed
 
 - **Default Temperature** — changed the default temperature from 0.0 to 0.1 for new installations to encourage more creative responses while still being mostly deterministic. Existing users keep their current temperature setting.
+- **API Key Optional for Custom URLs** — the "Required" marker is no longer shown on the API key field when a custom endpoint URL is configured, since many local inference servers don't require authentication.
+- **Model Selection Optional for Custom URLs** — when using a custom endpoint URL, the model dropdown selection is no longer mandatory. Some inference servers (e.g. LM Studio with Claude compatibility) handle model routing internally.
 
 ### Fixed
 
@@ -21,6 +25,7 @@ All notable changes to this project will be documented in this file.
 - **Model List Empty on Startup** — the model selector was empty after app restart because the model fetch system's `run_if` guard prevented it from running on the first frame. Models are now fetched automatically on startup.
 - **Model List Empty After Provider Switch** — switching the AI provider via the chat header selector now triggers a model list reload instead of showing an empty model selector.
 - **Chat History Overwrites Draft** — pressing Arrow Up/Down in the chat input no longer wraps cyclically and discards unsent text. The current draft is preserved and restored when pressing Arrow Down past the newest history entry.
+- **"Select a model" Warning with Custom URL** — the warning "Select a model in ⚙" no longer appears when using a custom endpoint URL, since model selection may be handled server-side.
 
 
 ## [0.9.2] - 2026-03-10

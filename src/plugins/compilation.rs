@@ -3,7 +3,7 @@ use bevy::render::mesh::{Indices, PrimitiveTopology};
 use std::sync::{Mutex, mpsc, Arc};
 use std::sync::atomic::AtomicBool;
 
-use super::ai_chat::ChatMessage;
+use super::ai_chat::{ChatMessage, VerificationState};
 use super::camera::OrbitCamera;
 use super::code_editor::ScadCode;
 use super::scene::CadModel;
@@ -449,6 +449,9 @@ fn poll_compilation_system(
             compilation_state.should_zoom = false; // Reset flag after use
         }
         CompilationResult::Error(err) => {
+            // Check if this error is from AI-generated code (verification in progress)
+            let is_ai_error = chat_state.verification == VerificationState::WaitingForCompilation;
+
             let user_msg = if err.contains("Internal error")
                 || err.contains("Non-manifold")
                 || err.contains("panicked")
@@ -467,11 +470,16 @@ fn poll_compilation_system(
                 auto_generated: true,
                 is_error: true,
             });
+
+            // If AI produced broken code, trigger error recovery
+            if is_ai_error {
+                chat_state.verification = VerificationState::ErrorRecovery(err);
+            }
         }
         CompilationResult::Canceled => {
             // Reset verification loop if it was waiting for this compilation
-            if chat_state.verification == super::ai_chat::VerificationState::WaitingForCompilation {
-                chat_state.verification = super::ai_chat::VerificationState::Idle;
+            if chat_state.verification == VerificationState::WaitingForCompilation {
+                chat_state.verification = VerificationState::Idle;
             }
         }
     }

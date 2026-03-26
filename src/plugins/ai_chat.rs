@@ -381,6 +381,8 @@ pub enum VerificationState {
     ReadyToVerify,
     /// Currently running a verification round (the Nth).
     Verifying(u32),
+    /// Compilation failed with an error — send error back to AI to fix.
+    ErrorRecovery(String),
 }
 
 #[derive(Resource)]
@@ -770,7 +772,8 @@ async fn run_ai_stream(
         eprintln!("[DEBUG] --- Chat messages ({} total) ---", messages.len());
         for (i, msg) in messages.iter().enumerate() {
             let preview: String = msg.content.chars().take(200).collect();
-            eprintln!("[DEBUG]   [{i}] {} (auto={}): {preview}", msg.role, msg.auto_generated);
+            let error_tag = if msg.is_error { " [ERROR-UI-ONLY]" } else { "" };
+            eprintln!("[DEBUG]   [{i}] {} (auto={}){error_tag}: {preview}", msg.role, msg.auto_generated);
         }
         eprintln!("[DEBUG] Views: {}", views.len());
         eprintln!("[DEBUG] ---");
@@ -779,6 +782,10 @@ async fn run_ai_stream(
     let mut chat_req = ChatRequest::default().with_system(system_prompt);
 
     for msg in &messages {
+        // Skip error messages — they're only for UI display, not for the AI context
+        if msg.is_error {
+            continue;
+        }
         match msg.role.as_str() {
             "user" => {
                 if msg.images.is_empty() {
@@ -879,9 +886,11 @@ async fn run_ai_stream(
     }
 
     // Ensure the conversation ends with a user message (some APIs require this)
+    // Check the last non-error message since error messages are filtered out
+    let last_non_error_msg = messages.iter().rev().find(|m| !m.is_error);
     let ends_with_user = !views.is_empty()
         || !other_views.is_empty()
-        || messages.last().is_some_and(|m| m.role == "user");
+        || last_non_error_msg.is_some_and(|m| m.role == "user");
     if !ends_with_user {
         chat_req = chat_req.append_message(GenaiMessage::user(
             "Please respond to the conversation above.",
@@ -910,9 +919,20 @@ async fn run_ai_stream(
         chat_options.extra_headers = Some(headers);
     }
 
-    let stream_response = client
+    let stream_response = match client
         .exec_chat_stream(model_name, chat_req, Some(&chat_options))
-        .await?;
+        .await
+    {
+        Ok(response) => response,
+        Err(e) => {
+            let err_msg = format!("API request failed: {e}");
+            if cfg!(debug_assertions) {
+                eprintln!("[DEBUG] Stream init error: {err_msg}");
+            }
+            let _ = tx.send(AiStreamChunk::Error(err_msg));
+            return Ok(());
+        }
+    };
 
     let mut stream = std::pin::pin!(stream_response.stream);
     let mut full_content = String::new();
@@ -935,15 +955,26 @@ async fn run_ai_stream(
             }
             Ok(_) => {} // Start, ThoughtSignatureChunk, ToolCallChunk
             Err(e) => {
-                let err_msg = format!("{e}");
+                let err_msg = format!("Stream error: {e}");
+                if cfg!(debug_assertions) {
+                    eprintln!("[DEBUG] {err_msg}");
+                }
                 let _ = tx.send(AiStreamChunk::Error(err_msg));
                 return Ok(());
             }
         }
     }
 
+    // Detect empty response which might indicate an error on the server side
+    // that wasn't properly communicated (e.g., context size exceeded)
     if full_content.is_empty() {
-        full_content = "(no response)".to_string();
+        let warning = "The AI returned an empty response. This may indicate:\n\
+            • The request exceeded the model's context limit\n\
+            • An error on the inference server\n\
+            • Network or timeout issues\n\n\
+            Check your inference server's logs for details.";
+        let _ = tx.send(AiStreamChunk::Error(warning.to_string()));
+        return Ok(());
     }
 
     if cfg!(debug_assertions) {
@@ -1148,7 +1179,7 @@ fn ai_verify_system(
     compilation_state: Res<super::compilation::CompilationState>,
     ai_config: Res<AiConfig>,
 ) {
-    match chat_state.verification {
+    match &chat_state.verification {
         VerificationState::WaitingForCompilation => {
             // Wait until compilation finishes
             if !compilation_state.is_compiling {
@@ -1187,6 +1218,27 @@ fn ai_verify_system(
             chat_state.is_streaming = true;
             chat_state.streaming_start = Some(std::time::Instant::now());
             chat_state.verification = VerificationState::Verifying(round);
+        }
+        VerificationState::ErrorRecovery(err) => {
+            // AI produced code that caused a compilation error — ask it to fix
+            let error_msg = err.clone();
+
+            chat_state.messages.push(ChatMessage {
+                role: "user".into(),
+                content: format!(
+                    "[Error Recovery] The code you provided has a compilation error:\n\n{error_msg}\n\n\
+                    Please fix this error and provide corrected code."
+                ),
+                thinking: None,
+                images: Vec::new(),
+                auto_generated: true,
+                is_error: false,
+            });
+
+            // Trigger AI send to get corrected code
+            chat_state.is_streaming = true;
+            chat_state.streaming_start = Some(std::time::Instant::now());
+            chat_state.verification = VerificationState::Verifying(0); // Reset round counter
         }
         _ => {}
     }
