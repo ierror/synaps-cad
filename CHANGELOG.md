@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.10.0] - 2026-03-26
+
+### Added
+
+- **Custom Endpoint URLs for All AI Providers** — every provider now has an "Endpoint URL" field in AI Settings, enabling use of custom/self-hosted API endpoints (e.g. LM Studio, vLLM, Azure ML Studio, LiteLLM). Previously only Ollama supported a custom host. The field shows the provider's default URL as placeholder text. Model listing for custom endpoints uses the OpenAI-compatible `/models` format with automatic fallback to Ollama format.
+
+### Fixed
+
+- **Custom Ollama Host Without API Key** — fixed a bug where setting a custom Ollama host was silently ignored when no API key was configured, falling back to the default `localhost:11434` endpoint.
+- **Adapter Kind Override** — the user-selected provider now always determines the API format used (e.g. OpenAI's `/chat/completions` vs Ollama's `/api/chat`), regardless of what the genai library infers from the model name. This fixes issues when using non-standard model names with providers like LM Studio.
+
+
 ## [0.9.2] - 2026-03-10
 
 ### Fixed

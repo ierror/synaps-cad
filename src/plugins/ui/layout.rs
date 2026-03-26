@@ -4,7 +4,7 @@ use std::sync::{Mutex, mpsc};
 
 use crate::plugins::code_editor::{ScadCode, detect_views, set_active_view};
 use crate::plugins::compilation::{CompilationState, LastCompiledParts, ModelViews};
-use crate::plugins::ai_chat::{AiConfig, AvailableModels, ChatState, TokioRuntime, env_var_for_adapter, ADAPTER_NAMES, VERIFICATION_ROUND_CHOICES};
+use crate::plugins::ai_chat::{AiConfig, AvailableModels, ChatState, TokioRuntime, env_var_for_adapter, default_placeholder_url, ADAPTER_NAMES, VERIFICATION_ROUND_CHOICES};
 use crate::plugins::ui::resources::{OccupiedScreenSpace, ImagePreviewState, AppErrors, SettingsDialogOpen, ExportState};
 use crate::plugins::ui::chat::render_chat_content;
 use crate::plugins::ui::editor::render_code_editor;
@@ -635,28 +635,26 @@ fn render_settings_dialog(
                         });
                 }
 
-                if ai_config.adapter_name == "Ollama" {
-                    ui.horizontal(|ui| {
-                        ui.label("Ollama Host:");
-                        let res = ui.add(
-                            egui::TextEdit::singleline(&mut ai_config.ollama_host)
-                                .hint_text("http://localhost:11434"),
-                        );
-                        if res.lost_focus() || (res.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
-                            let mut host = ai_config.ollama_host.trim().to_string();
-                            if !host.is_empty() && !host.ends_with('/') {
-                                host.push('/');
-                            }
-                            ai_config.ollama_host.clone_from(&host);
-                            ai_config.last_ollama_host = host;
-                            
-                            // Reload models when Ollama host changes
-                            if res.lost_focus() {
-                                available_models.force_reload = true;
-                            }
+                ui.horizontal(|ui| {
+                    ui.label("Endpoint URL:");
+                    let placeholder = default_placeholder_url(&ai_config.adapter_name);
+                    let url = ai_config.custom_url_mut();
+                    let res = ui.add(
+                        egui::TextEdit::singleline(url)
+                            .hint_text(placeholder),
+                    );
+                    if res.lost_focus() || (res.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
+                        let mut normalized = url.trim().to_string();
+                        if !normalized.is_empty() && !normalized.ends_with('/') {
+                            normalized.push('/');
                         }
-                    });
-                }
+                        *url = normalized;
+
+                        if res.lost_focus() {
+                            available_models.force_reload = true;
+                        }
+                    }
+                });
 
                 ui.horizontal(|ui| {
                     ui.label("API Key:");

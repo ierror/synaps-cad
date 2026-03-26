@@ -104,6 +104,25 @@ pub fn env_var_for_adapter(adapter: &str) -> Option<&'static str> {
     }
 }
 
+/// Returns the default placeholder URL for the given adapter.
+/// These match the genai library's built-in default endpoints.
+pub fn default_placeholder_url(adapter: &str) -> &'static str {
+    match adapter {
+        "Anthropic" => "https://api.anthropic.com/v1/",
+        "OpenAI" => "https://api.openai.com/v1/",
+        "Gemini" => "https://generativelanguage.googleapis.com/v1beta/",
+        "Groq" => "https://api.groq.com/openai/v1/",
+        "Ollama" => "http://localhost:11434/",
+        "DeepSeek" => "https://api.deepseek.com/v1/",
+        "Cohere" => "https://api.cohere.com/v1/",
+        "Fireworks" => "https://api.fireworks.ai/inference/v1/",
+        "Together" => "https://api.together.xyz/v1/",
+        "Xai" => "https://api.x.ai/v1/",
+        "Zai" => "https://api.z.ai/api/paas/v4/",
+        _ => "",
+    }
+}
+
 #[derive(Resource)]
 pub struct AiConfig {
     pub adapter_name: String,
@@ -112,10 +131,9 @@ pub struct AiConfig {
     pub api_keys: std::collections::HashMap<String, String>,
     /// Per-provider last-used model (`adapter_name` → `model_name`).
     pub model_per_provider: std::collections::HashMap<String, String>,
-    /// Custom Ollama host (e.g. <http://192.168.1.10:11434>).
-    pub ollama_host: String,
-    /// Last committed Ollama host (used to trigger model re-fetch).
-    pub last_ollama_host: String,
+    /// Per-provider custom endpoint URLs (`adapter_name` → URL).
+    /// Empty string means "use default endpoint".
+    pub custom_urls: std::collections::HashMap<String, String>,
     pub system_prompt: String,
     pub temperature: f64,
     /// Maximum automatic verification rounds (`u32::MAX` = unlimited).
@@ -137,21 +155,39 @@ impl AiConfig {
             .entry(self.adapter_name.clone())
             .or_default()
     }
+
+    /// Get the custom endpoint URL for the currently selected adapter.
+    pub fn custom_url(&self) -> &str {
+        self.custom_urls
+            .get(&self.adapter_name)
+            .map_or("", String::as_str)
+    }
+
+    /// Get a mutable reference to the custom endpoint URL for the currently selected adapter.
+    pub fn custom_url_mut(&mut self) -> &mut String {
+        self.custom_urls
+            .entry(self.adapter_name.clone())
+            .or_default()
+    }
 }
 
 impl Default for AiConfig {
     fn default() -> Self {
-        let mut ollama_host: String = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".into());
-        if !ollama_host.is_empty() && !ollama_host.ends_with('/') {
-            ollama_host.push('/');
+        let mut custom_urls = std::collections::HashMap::new();
+        let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_default();
+        if !ollama_host.is_empty() {
+            let mut host = ollama_host;
+            if !host.ends_with('/') {
+                host.push('/');
+            }
+            custom_urls.insert("Ollama".into(), host);
         }
         Self {
             adapter_name: "Anthropic".into(),
             model_name: "claude-3-5-sonnet-latest".into(),
             api_keys: std::collections::HashMap::new(),
             model_per_provider: std::collections::HashMap::new(),
-            last_ollama_host: ollama_host.clone(),
-            ollama_host,
+            custom_urls,
             system_prompt: DEFAULT_SYSTEM_PROMPT.into(),
             temperature: 0.0,
             max_verification_rounds: 2,
@@ -167,7 +203,7 @@ pub struct AvailableModels {
     pub loading: bool,
     pub last_adapter: String,
     pub last_api_key: String,
-    pub last_ollama_host: String,
+    pub last_custom_url: String,
     pub error: Option<String>,
     /// Set to true when the persisted model is no longer available.
     pub needs_configuration: bool,
@@ -385,12 +421,13 @@ fn fetch_models_system(
         }
     }
 
-    // Trigger a new fetch if adapter, API key, or Ollama host changed
+    // Trigger a new fetch if adapter, API key, or custom endpoint URL changed
     let current_key = ai_config.api_key().to_string();
     let key_changed = available.last_api_key != current_key;
-    let host_changed = available.last_ollama_host != ai_config.last_ollama_host;
+    let current_url = ai_config.custom_url().to_string();
+    let url_changed = available.last_custom_url != current_url;
     available.force_reload = false;
-    if (available.last_adapter != ai_config.adapter_name || key_changed || (ai_config.adapter_name == "Ollama" && host_changed)) && !available.loading {
+    if (available.last_adapter != ai_config.adapter_name || key_changed || url_changed) && !available.loading {
         // Clear stale models immediately so the UI doesn't show old data
         available.models.clear();
         // Save current model name to restore after fetch if it's still valid
@@ -400,7 +437,7 @@ fn fetch_models_system(
         ai_config.model_name.clear();
         available.last_adapter.clone_from(&ai_config.adapter_name);
         available.last_api_key.clone_from(&current_key);
-        available.last_ollama_host.clone_from(&ai_config.last_ollama_host);
+        available.last_custom_url.clone_from(&current_url);
         available.loading = true;
 
         let adapter_name = ai_config.adapter_name.clone();
@@ -409,12 +446,12 @@ fn fetch_models_system(
         } else {
             Some(current_key)
         };
-        let ollama_host = ai_config.last_ollama_host.clone();
+        let custom_url = current_url;
         let (tx, rx) = mpsc::channel();
         available.receiver = Some(Mutex::new(rx));
 
         runtime.0.spawn(async move {
-            let result = fetch_model_names(&adapter_name, api_key.as_deref(), &ollama_host).await;
+            let result = fetch_model_names(&adapter_name, api_key.as_deref(), &custom_url).await;
             let _ = tx.send(result);
         });
     }
@@ -423,7 +460,7 @@ fn fetch_models_system(
 async fn fetch_model_names(
     adapter_name: &str,
     api_key: Option<&str>,
-    ollama_host: &str,
+    custom_url: &str,
 ) -> Result<Vec<String>, String> {
     use genai::Client;
     use genai::adapter::AdapterKind;
@@ -444,10 +481,14 @@ async fn fetch_model_names(
         other => return Err(format!("Unknown adapter: {other}")),
     };
 
+    // Ollama always uses manual fetch (custom or default URL)
     if adapter_kind == AdapterKind::Ollama {
-        // For Ollama, genai 0.6.0-beta.3 doesn't easily support custom endpoints for all_model_names.
-        // We fetch it manually. Host is normalized to end with a slash.
-        let url = format!("{ollama_host}api/tags");
+        let base = if custom_url.is_empty() {
+            default_placeholder_url("Ollama")
+        } else {
+            custom_url
+        };
+        let url = format!("{base}api/tags");
         let client = reqwest::Client::new();
         let mut req = client.get(&url);
         if let Some(key) = api_key
@@ -460,7 +501,7 @@ async fn fetch_model_names(
             return Err("Unauthorized (401). Please check your API key for this Ollama host.".into());
         }
         let body: serde_json::Value = res.json().await.map_err(|e| format!("Failed to parse Ollama models: {e}"))?;
-        
+
         let mut models = Vec::new();
         if let Some(models_value) = body.get("models").and_then(|m| m.as_array()) {
             for model in models_value {
@@ -472,6 +513,48 @@ async fn fetch_model_names(
         return Ok(models);
     }
 
+    // Non-Ollama with custom URL: fetch models via OpenAI-compatible endpoint
+    if !custom_url.is_empty() {
+        let url = format!("{custom_url}models");
+        let client = reqwest::Client::new();
+        let mut req = client.get(&url);
+        if let Some(key) = api_key
+            && !key.is_empty()
+        {
+            req = req.header("Authorization", format!("Bearer {key}"));
+        }
+        let res = req.send().await.map_err(|e| format!("Failed to fetch models from custom endpoint: {e}"))?;
+        if res.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err("Unauthorized (401). Please check your API key.".into());
+        }
+        let body: serde_json::Value = res.json().await.map_err(|e| format!("Failed to parse models response: {e}"))?;
+
+        let mut models = Vec::new();
+        // Try OpenAI-compatible format: { "data": [{"id": "model-name"}, ...] }
+        if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
+            for model in data {
+                if let Some(id) = model.get("id").and_then(|i| i.as_str()) {
+                    models.push(id.to_string());
+                }
+            }
+        }
+        // Fallback: Ollama format { "models": [{"name": "model-name"}, ...] }
+        if models.is_empty() {
+            if let Some(models_arr) = body.get("models").and_then(|m| m.as_array()) {
+                for model in models_arr {
+                    if let Some(name) = model.get("name").and_then(|n| n.as_str()) {
+                        models.push(name.to_string());
+                    }
+                }
+            }
+        }
+        if models.is_empty() {
+            return Err("No models returned from custom endpoint. You can type the model name manually.".into());
+        }
+        return Ok(models);
+    }
+
+    // Default endpoint: use genai library
     let client = api_key.map_or_else(Client::default, |key| {
         let key = key.to_string();
         Client::builder()
@@ -481,7 +564,7 @@ async fn fetch_model_names(
 
     match client.all_model_names(adapter_kind).await {
         Ok(models) if !models.is_empty() => Ok(models),
-        Ok(_) => Err("No models returned. Check your API key or Ollama host.".into()),
+        Ok(_) => Err("No models returned. Check your API key.".into()),
         Err(e) => Err(format!("Failed to fetch models: {e}")),
     }
 }
@@ -504,6 +587,7 @@ fn ai_send_system(
 
     let current_code = scad_code.text.clone();
     let (active_view_name, _) = super::code_editor::detect_views(&current_code);
+    let adapter_name = ai_config.adapter_name.clone();
     let model_name = ai_config.model_name.clone();
     let current_key = ai_config.api_key().to_string();
     let api_key = if current_key.is_empty() {
@@ -511,7 +595,7 @@ fn ai_send_system(
     } else {
         Some(current_key)
     };
-    let ollama_host = ai_config.last_ollama_host.clone();
+    let custom_url = ai_config.custom_url().to_string();
     let system_prompt = ai_config.system_prompt.clone();
     let temperature = ai_config.temperature;
     let extended_thinking = ai_config.extended_thinking;
@@ -525,8 +609,8 @@ fn ai_send_system(
         eprintln!("[DEBUG] === AI Chat Request ===");
         eprintln!("[DEBUG] Provider: {}", ai_config.adapter_name);
         eprintln!("[DEBUG] Model: {model_name}");
-        if ai_config.adapter_name == "Ollama" {
-            eprintln!("[DEBUG] Ollama Host: {ollama_host}");
+        if !custom_url.is_empty() {
+            eprintln!("[DEBUG] Custom URL: {custom_url}");
         }
         eprintln!("[DEBUG] Temperature: {temperature}");
         eprintln!("[DEBUG] Extended thinking: {extended_thinking}");
@@ -540,9 +624,10 @@ fn ai_send_system(
             messages,
             current_code,
             active_view_name,
+            &adapter_name,
             &model_name,
             api_key.as_deref(),
-            &ollama_host,
+            &custom_url,
             &system_prompt,
             temperature,
             extended_thinking,
@@ -566,9 +651,10 @@ async fn run_ai_stream(
     messages: Vec<ChatMessage>,
     current_code: String,
     active_view_name: Option<String>,
+    adapter_name: &str,
     model_name: &str,
     api_key: Option<&str>,
-    ollama_host: &str,
+    custom_url: &str,
     base_system_prompt: &str,
     temperature: f64,
     extended_thinking: bool,
@@ -586,22 +672,47 @@ async fn run_ai_stream(
     use genai::resolver::{AuthData, Endpoint};
     use genai::{Client, ServiceTarget};
 
-    // Use the same auth approach as fetch_model_names (which works)
-    let client = api_key.map_or_else(Client::default, |key| {
-        let key = key.to_string();
-        let ollama_host_clone = ollama_host.to_string();
-        
-        Client::builder()
-            .with_auth_resolver_fn(move |_| Ok(Some(AuthData::Key(key.clone()))))
-            .with_service_target_resolver_fn(move |service_target: ServiceTarget| {
-                let mut service_target = service_target;
-                if service_target.model.adapter_kind == AdapterKind::Ollama {
-                    service_target.endpoint = Endpoint::from_owned(ollama_host_clone.clone());
+    // Resolve the user-selected adapter kind so we can override genai's model-name inference.
+    // This ensures the correct API format is used (e.g. OpenAI's /chat/completions vs Ollama's /api/chat).
+    let user_adapter_kind = match adapter_name {
+        "OpenAI" => Some(AdapterKind::OpenAI),
+        "Anthropic" => Some(AdapterKind::Anthropic),
+        "Gemini" => Some(AdapterKind::Gemini),
+        "Groq" => Some(AdapterKind::Groq),
+        "Ollama" => Some(AdapterKind::Ollama),
+        "DeepSeek" => Some(AdapterKind::DeepSeek),
+        "Cohere" => Some(AdapterKind::Cohere),
+        "Fireworks" => Some(AdapterKind::Fireworks),
+        "Together" => Some(AdapterKind::Together),
+        "Xai" => Some(AdapterKind::Xai),
+        "Zai" => Some(AdapterKind::Zai),
+        _ => None,
+    };
+
+    let has_custom_url = !custom_url.is_empty();
+    let needs_resolver = has_custom_url || user_adapter_kind.is_some();
+    let client = if api_key.is_some() || needs_resolver {
+        let key = api_key.unwrap_or("").to_string();
+        let custom_url_clone = custom_url.to_string();
+        let mut builder = Client::builder();
+        if !key.is_empty() {
+            builder = builder.with_auth_resolver_fn(move |_| Ok(Some(AuthData::Key(key.clone()))));
+        }
+        if needs_resolver {
+            builder = builder.with_service_target_resolver_fn(move |mut service_target: ServiceTarget| {
+                if let Some(adapter_kind) = user_adapter_kind {
+                    service_target.model.adapter_kind = adapter_kind;
+                }
+                if !custom_url_clone.is_empty() {
+                    service_target.endpoint = Endpoint::from_owned(custom_url_clone.clone());
                 }
                 Ok(service_target)
-            })
-            .build()
-    });
+            });
+        }
+        builder.build()
+    } else {
+        Client::default()
+    };
 
     let mut system_prompt =
         format!("{base_system_prompt}\n\nCurrent OpenSCAD code:\n```\n{current_code}\n```\n");
@@ -748,7 +859,7 @@ async fn run_ai_stream(
     }
 
     // Workaround for Ollama adapter ignoring auth in genai 0.6.0-beta.3
-    if AdapterKind::from_model(model_name).ok() == Some(AdapterKind::Ollama)
+    if user_adapter_kind == Some(AdapterKind::Ollama)
         && let Some(key) = api_key
         && !key.is_empty()
     {

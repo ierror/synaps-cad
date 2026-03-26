@@ -170,6 +170,7 @@ The AI chat pipeline (`ai_chat.rs`) logs the full request (system prompt, messag
 - **Hand cursor on hover**: All clickable/interactive widgets display a pointing-hand cursor. This is set globally via `style.interaction.interact_cursor` in `setup_egui_theme`. For custom widgets using `sense(Sense::click())`, explicitly add `.on_hover_cursor(egui::CursorIcon::PointingHand)`.
 - **Dialog behavior**: All floating windows (Settings, Cheatsheet, etc.) must close when the **Escape** key is pressed.
 - **AI Settings**: Opened via a ⚙ gear button in the "AI Assistant" header row; rendered as a floating `egui::Window`, not inline.
+- **Custom Endpoint URLs**: Every AI provider has an "Endpoint URL" field in AI Settings. When empty, the provider's default endpoint is used. When set, the custom URL overrides the endpoint for both model listing and chat API calls. Custom URLs are stored per-provider in `AiConfig.custom_urls: HashMap<String, String>` and persisted in `session.json`. The `OLLAMA_HOST` environment variable still works as the default for Ollama. Default placeholder URLs match the genai library's built-in endpoints (e.g. `https://api.openai.com/v1/` for OpenAI, `http://localhost:11434/` for Ollama). For non-Ollama providers with custom URLs, model listing tries the OpenAI-compatible `GET {url}models` endpoint, with fallback to Ollama format.
 - **Compile button**: Right-aligned in the "Code" heading row.
 
 ## Part Colors
@@ -199,3 +200,12 @@ Example: `color("green") cylinder(h = 20, r = 3);` for a plant stem.
 **Keep `README.md` keyboard shortcuts table up to date.** When adding or changing keyboard shortcuts (in `camera.rs` or elsewhere), update the "Keyboard Shortcuts" and "3D Viewport Navigation" sections in `README.md` to match.
 
 **Keep the in-app keyboard cheatsheet up to date.** The `cheatsheet_system` in `ui.rs` contains a `shortcuts` array listing all keyboard shortcuts shown to the user. When adding or changing shortcuts, update that array alongside the `README.md` tables.
+
+
+## Tasks
+
+### Prepare feature commit
+
+- check if version number needs to be updated
+- update Changelog.md with a summary of the new feature and any relevant details for users
+- print a commit message but don't commit yet, so that I can review and edit the message before committing

@@ -49,7 +49,10 @@ struct PersistentData {
     /// Per-provider last-used model (`adapter_name` → `model_name`).
     #[serde(default)]
     model_per_provider: std::collections::HashMap<String, String>,
-    /// Custom Ollama host.
+    /// Per-provider custom endpoint URLs.
+    #[serde(default)]
+    custom_urls: std::collections::HashMap<String, String>,
+    /// Legacy: custom Ollama host. Migrated into `custom_urls` on load.
     #[serde(default = "default_ollama_host")]
     ollama_host: String,
     #[serde(default)]
@@ -127,12 +130,26 @@ fn load_session_system(
         .collect();
     
     ai_config.model_per_provider = saved.model_per_provider;
-    let mut host = saved.ollama_host;
-    if !host.is_empty() && !host.ends_with('/') {
-        host.push('/');
+
+    // Migrate legacy ollama_host into custom_urls
+    let mut custom_urls = saved.custom_urls;
+    if !saved.ollama_host.is_empty() && !custom_urls.contains_key("Ollama") {
+        let mut host = saved.ollama_host;
+        if !host.ends_with('/') {
+            host.push('/');
+        }
+        custom_urls.insert("Ollama".into(), host);
     }
-    ai_config.ollama_host.clone_from(&host);
-    ai_config.last_ollama_host = host; // sync on load
+    // Normalize all custom URLs to end with '/'
+    for url in custom_urls.values_mut() {
+        let trimmed = url.trim().to_string();
+        if !trimmed.is_empty() && !trimmed.ends_with('/') {
+            *url = format!("{trimmed}/");
+        } else {
+            *url = trimmed;
+        }
+    }
+    ai_config.custom_urls = custom_urls;
 
     label_vis.visible = saved.ui.show_labels;
 
@@ -296,7 +313,8 @@ fn save_session(ai_config: &AiConfig, chat_state: &ChatState, scad_code: &ScadCo
         max_verification_rounds: ai_config.max_verification_rounds,
         api_keys: ai_config.api_keys.clone(),
         model_per_provider: ai_config.model_per_provider.clone(),
-        ollama_host: ai_config.ollama_host.clone(),
+        custom_urls: ai_config.custom_urls.clone(),
+        ollama_host: ai_config.custom_urls.get("Ollama").cloned().unwrap_or_default(),
         ui: UiSettings {
             show_labels: label_vis.visible,
         },
