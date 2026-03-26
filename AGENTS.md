@@ -171,6 +171,8 @@ The AI chat pipeline (`ai_chat.rs`) logs the full request (system prompt, messag
 - **Dialog behavior**: All floating windows (Settings, Cheatsheet, etc.) must close when the **Escape** key is pressed.
 - **AI Settings**: Opened via a ⚙ gear button in the "AI Assistant" header row; rendered as a floating `egui::Window`, not inline.
 - **Custom Endpoint URLs**: Every AI provider has an "Endpoint URL" field in AI Settings. When empty, the provider's default endpoint is used. When set, the custom URL overrides the endpoint for both model listing and chat API calls. Custom URLs are stored per-provider in `AiConfig.custom_urls: HashMap<String, String>` and persisted in `session.json`. The `OLLAMA_HOST` environment variable still works as the default for Ollama. Default placeholder URLs match the genai library's built-in endpoints (e.g. `https://api.openai.com/v1/` for OpenAI, `http://localhost:11434/` for Ollama). For non-Ollama providers with custom URLs, model listing tries the OpenAI-compatible `GET {url}models` endpoint, with fallback to Ollama format.
+  - Some custom Claude/OpenAI-compatible endpoints (e.g. LM Studio wrappers) may not return a model list and may encode model routing in the API token or server config. In this case, do not force dropdown model selection or show "Select model in ⚙" warnings just because no models were listed; manual model entry can remain optional.
+  - API tokens are **not mandatory** when a custom endpoint URL is set. Do not show required markers or block usage solely because the API key field is empty in custom-URL mode.
 - **Compile button**: Right-aligned in the "Code" heading row.
 
 ## Part Colors

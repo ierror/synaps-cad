@@ -123,6 +123,45 @@ pub fn default_placeholder_url(adapter: &str) -> &'static str {
     }
 }
 
+/// Normalizes a custom endpoint URL for the selected adapter.
+///
+/// Rules:
+/// - trim whitespace
+/// - ensure trailing slash
+/// - if only host/root is provided, inherit the adapter's default base path
+///   (e.g. `http://localhost:1234/` + Anthropic -> `http://localhost:1234/v1/`)
+pub fn normalize_custom_url(adapter: &str, raw_url: &str) -> String {
+    let trimmed = raw_url.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    let mut normalized = trimmed.to_string();
+    if !normalized.ends_with('/') {
+        normalized.push('/');
+    }
+
+    let Ok(mut parsed) = reqwest::Url::parse(&normalized) else {
+        return normalized;
+    };
+
+    if parsed.path() == "/"
+        && let Ok(default_url) = reqwest::Url::parse(default_placeholder_url(adapter))
+    {
+        let default_path = default_url.path();
+        if !default_path.is_empty() && default_path != "/" {
+            parsed.set_path(default_path);
+            let mut with_default_path = parsed.to_string();
+            if !with_default_path.ends_with('/') {
+                with_default_path.push('/');
+            }
+            return with_default_path;
+        }
+    }
+
+    normalized
+}
+
 #[derive(Resource)]
 pub struct AiConfig {
     pub adapter_name: String,
@@ -423,13 +462,15 @@ fn fetch_models_system(
         }
     }
 
-    // Trigger a new fetch if adapter, API key, or custom endpoint URL changed
+    // Trigger a new fetch if adapter/API key/custom endpoint changed,
+    // or when explicitly requested by the UI (focus-lost reload).
     let current_key = ai_config.api_key().to_string();
     let key_changed = available.last_api_key != current_key;
     let current_url = ai_config.custom_url().to_string();
     let url_changed = available.last_custom_url != current_url;
+    let force_reload = available.force_reload;
     available.force_reload = false;
-    if (available.last_adapter != ai_config.adapter_name || key_changed || url_changed) && !available.loading {
+    if (force_reload || available.last_adapter != ai_config.adapter_name || key_changed || url_changed) && !available.loading {
         // Clear stale models immediately so the UI doesn't show old data
         available.models.clear();
         // Save current model name to restore after fetch if it's still valid
@@ -1429,5 +1470,29 @@ mod tests {
         let text = "Empty code:\n\n```synapscad\n\n```";
         let code = extract_openscad_code(text);
         assert_eq!(code, None);
+    }
+
+    #[test]
+    fn test_normalize_custom_url_keeps_explicit_path() {
+        let url = normalize_custom_url("Anthropic", "http://localhost:1234/anthropic/");
+        assert_eq!(url, "http://localhost:1234/anthropic/");
+    }
+
+    #[test]
+    fn test_normalize_custom_url_adds_default_path_for_host_only() {
+        let url = normalize_custom_url("Anthropic", "http://localhost:1234");
+        assert_eq!(url, "http://localhost:1234/v1/");
+    }
+
+    #[test]
+    fn test_normalize_custom_url_openai_adds_default_path_for_host_only() {
+        let url = normalize_custom_url("OpenAI", "http://localhost:1234");
+        assert_eq!(url, "http://localhost:1234/v1/");
+    }
+
+    #[test]
+    fn test_normalize_custom_url_ollama_stays_root() {
+        let url = normalize_custom_url("Ollama", "http://localhost:11434");
+        assert_eq!(url, "http://localhost:11434/");
     }
 }

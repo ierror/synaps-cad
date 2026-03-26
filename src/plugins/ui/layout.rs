@@ -4,7 +4,7 @@ use std::sync::{Mutex, mpsc};
 
 use crate::plugins::code_editor::{ScadCode, detect_views, set_active_view};
 use crate::plugins::compilation::{CompilationState, LastCompiledParts, ModelViews};
-use crate::plugins::ai_chat::{AiConfig, AvailableModels, ChatState, TokioRuntime, env_var_for_adapter, default_placeholder_url, ADAPTER_NAMES, VERIFICATION_ROUND_CHOICES};
+use crate::plugins::ai_chat::{AiConfig, AvailableModels, ChatState, TokioRuntime, env_var_for_adapter, default_placeholder_url, normalize_custom_url, ADAPTER_NAMES, VERIFICATION_ROUND_CHOICES};
 use crate::plugins::ui::resources::{OccupiedScreenSpace, ImagePreviewState, AppErrors, SettingsDialogOpen, ExportState};
 use crate::plugins::ui::chat::render_chat_content;
 use crate::plugins::ui::editor::render_code_editor;
@@ -62,7 +62,8 @@ pub fn ui_layout_system(
         render_ai_assistant_header(ui, &mut chat_state, &mut ai_config, &mut available_models, &mut settings_open);
         ui.separator();
 
-        render_chat_input(ui, &mut chat_state, &mut file_picker, &runtime, ai_config.model_name.is_empty());
+        let no_model_selected = ai_config.model_name.is_empty() && ai_config.custom_url().is_empty();
+        render_chat_input(ui, &mut chat_state, &mut file_picker, &runtime, no_model_selected);
         render_pending_attachments(ui, &mut chat_state, &mut preview_state);
 
         let total_remaining = ui.available_height();
@@ -164,7 +165,7 @@ fn render_ai_assistant_header(ui: &mut egui::Ui, chat_state: &mut ChatState, ai_
             // Provider selector
             let mut current_adapter = ai_config.adapter_name.clone();
             let combo_w = if is_narrow { 70.0 } else { 80.0 };
-            if ai_config.model_name.is_empty() && !available_models.loading {
+            if ai_config.model_name.is_empty() && ai_config.custom_url().is_empty() && !available_models.loading {
                 ui.colored_label(egui::Color32::from_rgb(255, 180, 50), "⚠ Select model in ⚙");
             }
             if egui::ComboBox::from_id_salt("provider_select_main")
@@ -174,6 +175,10 @@ fn render_ai_assistant_header(ui: &mut egui::Ui, chat_state: &mut ChatState, ai_
                     let mut changed = false;
                     for &adapter in ADAPTER_NAMES {
                         let configured = env_var_for_adapter(adapter).is_none()
+                            || ai_config
+                                .custom_urls
+                                .get(adapter)
+                                .is_some_and(|url| !url.is_empty())
                             || env_var_for_adapter(adapter)
                                 .and_then(|n| std::env::var(n).ok())
                                 .is_some_and(|v| !v.is_empty())
@@ -606,7 +611,8 @@ fn render_settings_dialog(
                 });
                 ui.horizontal(|ui| {
                     ui.label("Model:");
-                    let needs_key = env_var_for_adapter(&ai_config.adapter_name).is_some();
+                    let has_custom_url = !ai_config.custom_url().is_empty();
+                    let needs_key = env_var_for_adapter(&ai_config.adapter_name).is_some() && !has_custom_url;
                     let has_key = !needs_key
                         || env_var_for_adapter(&ai_config.adapter_name)
                             .and_then(|n| std::env::var(n).ok())
@@ -632,6 +638,13 @@ fn render_settings_dialog(
                                     );
                                 }
                             });
+                        if has_custom_url && available_models.models.is_empty() {
+                            ui.add_space(4.0);
+                            ui.add(
+                                egui::TextEdit::singleline(&mut ai_config.model_name)
+                                    .hint_text("Optional manual model name"),
+                            );
+                        }
                         if ai_config.model_name != prev_model
                             && available_models.models.contains(&ai_config.model_name)
                         {
@@ -653,46 +666,65 @@ fn render_settings_dialog(
                 ui.horizontal(|ui| {
                     ui.label("Endpoint URL:");
                     let placeholder = default_placeholder_url(&ai_config.adapter_name);
+                    let adapter_name = ai_config.adapter_name.clone();
                     let url = ai_config.custom_url_mut();
                     let res = ui.add(
                         egui::TextEdit::singleline(url)
                             .hint_text(placeholder),
                     );
                     if res.lost_focus() || (res.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
-                        let mut normalized = url.trim().to_string();
-                        if !normalized.is_empty() && !normalized.ends_with('/') {
-                            normalized.push('/');
-                        }
+                        let normalized = normalize_custom_url(&adapter_name, url);
+                        let has_endpoint = !normalized.is_empty();
+                        let url_changed = *url != normalized;
                         *url = normalized;
 
-                        if res.lost_focus() {
+                        if res.lost_focus() && (has_endpoint || url_changed) {
                             available_models.force_reload = true;
+                            ctx.request_repaint();
                         }
                     }
                 });
 
                 ui.horizontal(|ui| {
                     ui.label("API Key:");
+                    let has_custom_url = !ai_config.custom_url().is_empty();
                     let env_var = env_var_for_adapter(&ai_config.adapter_name);
                     let env_set = env_var
                         .and_then(|n| std::env::var(n).ok())
                         .is_some_and(|v| !v.is_empty());
-                    if env_set && ai_config.api_key().is_empty() {
+                    if env_set && ai_config.api_key().is_empty() && !has_custom_url {
                         ui.add_enabled(
                             false,
                             egui::TextEdit::singleline(&mut String::new())
                                 .hint_text(format!("Set via {}", env_var.unwrap_or(""))),
                         );
                     } else {
+                        let visibility_id = egui::Id::new("ai_settings_api_key_visible");
+                        let mut show_api_key = ctx
+                            .data(|d| d.get_temp::<bool>(visibility_id).unwrap_or(false));
                         let key = ai_config.api_key_mut();
                         let api_key_response = ui.add(
                             egui::TextEdit::singleline(key)
-                                .password(true)
+                                .password(!show_api_key)
                                 .hint_text(if env_set { "Override env var" } else { "Enter API key" }),
                         );
+                        let mut toggled_visibility = false;
+                        if ui.button(if show_api_key { "🙈" } else { "👁" })
+                            .on_hover_text(if show_api_key {
+                                "Hide API key"
+                            } else {
+                                "Show API key as plain text"
+                            })
+                            .clicked()
+                        {
+                            show_api_key = !show_api_key;
+                            toggled_visibility = true;
+                            ctx.request_repaint();
+                        }
+                        ctx.data_mut(|d| d.insert_temp(visibility_id, show_api_key));
                         
                         // Trim and reload models when API key field loses focus
-                        if api_key_response.lost_focus() {
+                        if api_key_response.lost_focus() && !toggled_visibility {
                             // Trim whitespace from the API key
                             let trimmed_key = key.trim().to_string();
                             if trimmed_key != *key {

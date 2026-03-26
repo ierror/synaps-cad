@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::ai_chat::{AiConfig, ChatImage, ChatMessage, ChatState};
+use super::ai_chat::{AiConfig, ChatImage, ChatMessage, ChatState, normalize_custom_url};
 use super::code_editor::ScadCode;
 use super::scene::LabelVisibility;
 
@@ -140,14 +140,9 @@ fn load_session_system(
         }
         custom_urls.insert("Ollama".into(), host);
     }
-    // Normalize all custom URLs to end with '/'
-    for url in custom_urls.values_mut() {
-        let trimmed = url.trim().to_string();
-        if !trimmed.is_empty() && !trimmed.ends_with('/') {
-            *url = format!("{trimmed}/");
-        } else {
-            *url = trimmed;
-        }
+    // Normalize all custom URLs (trim, trailing slash, default adapter path on host-only URLs).
+    for (adapter, url) in &mut custom_urls {
+        *url = normalize_custom_url(adapter, url);
     }
     ai_config.custom_urls = custom_urls;
 
