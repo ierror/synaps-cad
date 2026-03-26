@@ -204,6 +204,7 @@ fn render_ai_assistant_header(ui: &mut egui::Ui, chat_state: &mut ChatState, ai_
                     .unwrap_or_default();
                 available_models.models.clear();
                 available_models.error = None;
+                available_models.force_reload = true;
             }
         });
     });

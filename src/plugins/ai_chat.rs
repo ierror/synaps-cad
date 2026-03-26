@@ -358,11 +358,13 @@ impl Plugin for AiChatPlugin {
                 Update,
                 (
                     fetch_models_system.run_if(
-                        // Only run when loading, polling results, or explicitly triggered
+                        // Run when: loading, polling results, explicitly triggered,
+                        // or on first frame (last_adapter empty → needs initial fetch)
                         |available: Res<AvailableModels>| {
                             available.loading
                                 || available.receiver.is_some()
                                 || available.force_reload
+                                || available.last_adapter.is_empty()
                         }
                     ),
                     ai_send_system,
