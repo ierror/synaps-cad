@@ -278,21 +278,35 @@ fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker:
         if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) && !chat_state.input_history.is_empty() {
             if chat_state.history_index.is_none() {
                 chat_state.history_draft = Some(chat_state.input_buffer.clone());
+                let idx = chat_state.input_history.len() - 1;
+                chat_state.history_index = Some(idx);
+                let (text, images) = chat_state.input_history[idx].clone();
+                chat_state.input_buffer = text; chat_state.pending_images = images;
+            } else if let Some(i) = chat_state.history_index {
+                if i > 0 {
+                    let idx = i - 1;
+                    chat_state.history_index = Some(idx);
+                    let (text, images) = chat_state.input_history[idx].clone();
+                    chat_state.input_buffer = text; chat_state.pending_images = images;
+                }
             }
+        } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) && chat_state.history_index.is_some() {
             let len = chat_state.input_history.len();
-            let idx = chat_state.history_index.map_or(len - 1, |i| if i == 0 { len - 1 } else { i - 1 });
-            chat_state.history_index = Some(idx);
-            let (text, images) = chat_state.input_history[idx].clone();
-            chat_state.input_buffer = text; chat_state.pending_images = images;
-        } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) && !chat_state.input_history.is_empty() {
-            if chat_state.history_index.is_none() {
-                chat_state.history_draft = Some(chat_state.input_buffer.clone());
+            if let Some(i) = chat_state.history_index {
+                if i + 1 < len {
+                    let idx = i + 1;
+                    chat_state.history_index = Some(idx);
+                    let (text, images) = chat_state.input_history[idx].clone();
+                    chat_state.input_buffer = text; chat_state.pending_images = images;
+                } else {
+                    // Past newest entry — restore draft
+                    if let Some(draft) = chat_state.history_draft.take() {
+                        chat_state.input_buffer = draft;
+                    }
+                    chat_state.pending_images.clear();
+                    chat_state.history_index = None;
+                }
             }
-            let len = chat_state.input_history.len();
-            let idx = chat_state.history_index.map_or(0, |i| if i + 1 >= len { 0 } else { i + 1 });
-            chat_state.history_index = Some(idx);
-            let (text, images) = chat_state.input_history[idx].clone();
-            chat_state.input_buffer = text; chat_state.pending_images = images;
         } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) && chat_state.history_index.is_some() {
             if let Some(draft) = chat_state.history_draft.take() {
                 chat_state.input_buffer = draft;

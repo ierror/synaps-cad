@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file.
 - **Custom Ollama Host Without API Key** — fixed a bug where setting a custom Ollama host was silently ignored when no API key was configured, falling back to the default `localhost:11434` endpoint.
 - **Adapter Kind Override** — the user-selected provider now always determines the API format used (e.g. OpenAI's `/chat/completions` vs Ollama's `/api/chat`), regardless of what the genai library infers from the model name. This fixes issues when using non-standard model names with providers like LM Studio.
 - **Model List Empty on Startup** — the model selector was empty after app restart because the model fetch system's `run_if` guard prevented it from running on the first frame. Models are now fetched automatically on startup.
+- **Model List Empty After Provider Switch** — switching the AI provider via the chat header selector now triggers a model list reload instead of showing an empty model selector.
+- **Chat History Overwrites Draft** — pressing Arrow Up/Down in the chat input no longer wraps cyclically and discards unsent text. The current draft is preserved and restored when pressing Arrow Down past the newest history entry.
 
 
 ## [0.9.2] - 2026-03-10
