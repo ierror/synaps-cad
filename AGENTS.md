@@ -224,6 +224,5 @@ Example: `color("green") cylinder(h = 20, r = 3);` for a plant stem.
 
 ### Prepare feature commit
 
-- check if version number needs to be updated
 - update Changelog.md with a summary of the new feature and any relevant details for users
 - print a commit message but don't commit yet, so that I can review and edit the message before committing
