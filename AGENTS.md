@@ -84,6 +84,22 @@ AI-generated code uses the **`synapscad`** namespace in fenced code blocks:
 
 The parser in `extract_openscad_code()` (`ai_chat.rs`) extracts code from the block and replaces the entire editor buffer.
 
+### Verification & Error Recovery
+
+The AI chat system includes automatic verification and error recovery loops:
+
+1. **Verification Loop**: After AI produces code, the system waits for compilation, then sends a verification prompt with fresh renders for the AI to confirm correctness.
+2. **Error Recovery**: If AI-generated code causes a compilation error (parse error, syntax error, etc.), the error is automatically sent back to the AI with a request to fix it. The AI then produces corrected code and the cycle continues.
+
+The `VerificationState` enum (`ai_chat.rs`) tracks this flow:
+- `Idle` — no active verification
+- `WaitingForCompilation` — AI produced code, waiting for compile to finish
+- `ReadyToVerify` — compilation succeeded, ready to send verification prompt
+- `Verifying(n)` — currently in verification round N
+- `ErrorRecovery(err)` — compilation failed, send error back to AI
+
+This ensures AI-generated code is automatically fixed when it contains syntax or parse errors.
+
 ### View System (`$view` variable)
 
 SynapsCAD uses a **single editor buffer** with a `$view` variable to switch between views/parts of a model. Views are defined as modules and selected via `if ($view == "name")` conditionals.
