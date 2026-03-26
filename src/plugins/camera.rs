@@ -104,7 +104,7 @@ fn orbit_camera_system(
             MouseScrollUnit::Line => ev.y * 5.0,
             MouseScrollUnit::Pixel => ev.y * 0.15,
         };
-        orbit.radius *= (1.0 - scroll * 0.02).clamp(0.5, 2.0);
+        orbit.radius *= scroll.mul_add(-0.02, 1.0).clamp(0.5, 2.0);
         orbit.radius = orbit.radius.clamp(0.1, 5000.0);
     }
 

@@ -328,7 +328,8 @@ impl Evaluator {
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
-        clippy::missing_panics_doc
+        clippy::missing_panics_doc,
+        clippy::cognitive_complexity
     )]
     pub fn eval_builtin_function(&mut self, name: &str, args: &[Value]) -> Value {
         match name {
@@ -530,7 +531,7 @@ impl Evaluator {
                                     rng =
                                         rng.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
                                     let t = (rng >> 33) as f64 / (1u64 << 31) as f64;
-                                    Value::Number(min + t * (max - min))
+                                    Value::Number(t.mul_add(max - min, min))
                                 })
                                 .collect();
                             Value::List(vals)

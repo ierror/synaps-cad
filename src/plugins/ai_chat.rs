@@ -535,17 +535,17 @@ async fn fetch_model_names(
         };
         let url = format!("{base}api/tags");
         let client = reqwest::Client::new();
-        let mut req = client.get(&url);
+        let mut request = client.get(&url);
         if let Some(key) = api_key
             && !key.is_empty()
         {
-            req = req.header("Authorization", format!("Bearer {key}"));
+            request = request.header("Authorization", format!("Bearer {key}"));
         }
-        let res = req.send().await.map_err(|e| format!("Failed to fetch Ollama models: {e}"))?;
-        if res.status() == reqwest::StatusCode::UNAUTHORIZED {
+        let response = request.send().await.map_err(|e| format!("Failed to fetch Ollama models: {e}"))?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             return Err("Unauthorized (401). Please check your API key for this Ollama host.".into());
         }
-        let body: serde_json::Value = res.json().await.map_err(|e| format!("Failed to parse Ollama models: {e}"))?;
+        let body: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse Ollama models: {e}"))?;
 
         let mut models = Vec::new();
         if let Some(models_value) = body.get("models").and_then(|m| m.as_array()) {
@@ -562,17 +562,17 @@ async fn fetch_model_names(
     if !custom_url.is_empty() {
         let url = format!("{custom_url}models");
         let client = reqwest::Client::new();
-        let mut req = client.get(&url);
+        let mut request = client.get(&url);
         if let Some(key) = api_key
             && !key.is_empty()
         {
-            req = req.header("Authorization", format!("Bearer {key}"));
+            request = request.header("Authorization", format!("Bearer {key}"));
         }
-        let res = req.send().await.map_err(|e| format!("Failed to fetch models from custom endpoint: {e}"))?;
-        if res.status() == reqwest::StatusCode::UNAUTHORIZED {
+        let response = request.send().await.map_err(|e| format!("Failed to fetch models from custom endpoint: {e}"))?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             return Err("Unauthorized (401). Please check your API key.".into());
         }
-        let body: serde_json::Value = res.json().await.map_err(|e| format!("Failed to parse models response: {e}"))?;
+        let body: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse models response: {e}"))?;
 
         let mut models = Vec::new();
         // Try OpenAI-compatible format: { "data": [{"id": "model-name"}, ...] }
@@ -691,7 +691,7 @@ fn ai_send_system(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::cognitive_complexity)]
 async fn run_ai_stream(
     messages: Vec<ChatMessage>,
     current_code: String,
