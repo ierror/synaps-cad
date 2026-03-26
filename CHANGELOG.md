@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.10.1] - 2026-03-26
+
+### Fixed
+
+- **CI Build Failure** — resolved `collapsible_if` clippy warnings that caused build failures on Rust 1.94+.
+
+
 ## [0.10.0] - 2026-03-26
 
 ### Added
