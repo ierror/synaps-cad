@@ -584,12 +584,12 @@ async fn fetch_model_names(
             }
         }
         // Fallback: Ollama format { "models": [{"name": "model-name"}, ...] }
-        if models.is_empty() {
-            if let Some(models_arr) = body.get("models").and_then(|m| m.as_array()) {
-                for model in models_arr {
-                    if let Some(name) = model.get("name").and_then(|n| n.as_str()) {
-                        models.push(name.to_string());
-                    }
+        if models.is_empty()
+            && let Some(models_arr) = body.get("models").and_then(|m| m.as_array())
+        {
+            for model in models_arr {
+                if let Some(name) = model.get("name").and_then(|n| n.as_str()) {
+                    models.push(name.to_string());
                 }
             }
         }

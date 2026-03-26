@@ -287,13 +287,13 @@ fn render_chat_input(ui: &mut egui::Ui, chat_state: &mut ChatState, file_picker:
                 chat_state.history_index = Some(idx);
                 let (text, images) = chat_state.input_history[idx].clone();
                 chat_state.input_buffer = text; chat_state.pending_images = images;
-            } else if let Some(i) = chat_state.history_index {
-                if i > 0 {
-                    let idx = i - 1;
-                    chat_state.history_index = Some(idx);
-                    let (text, images) = chat_state.input_history[idx].clone();
-                    chat_state.input_buffer = text; chat_state.pending_images = images;
-                }
+            } else if let Some(i) = chat_state.history_index
+                && i > 0
+            {
+                let idx = i - 1;
+                chat_state.history_index = Some(idx);
+                let (text, images) = chat_state.input_history[idx].clone();
+                chat_state.input_buffer = text; chat_state.pending_images = images;
             }
         } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) && chat_state.history_index.is_some() {
             let len = chat_state.input_history.len();
