@@ -283,7 +283,12 @@ mod tests {
             panic!("higher-order 2D operations should remain a sketch");
         };
 
-        assert!(profile.as_curve_region().unwrap().has_algebraic_fragments());
-        assert!(!Shape::Sketch2D(profile).into_csg_mesh().polygons.is_empty());
+        assert!(profile.as_curve_region().has_algebraic_fragments());
+        assert!(
+            !Shape::Sketch2D(profile)
+                .into_csg_mesh()
+                .triangles()
+                .is_empty()
+        );
     }
 }

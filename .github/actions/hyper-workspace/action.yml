@@ -21,14 +21,14 @@ runs:
           git -C "${destination}" checkout --detach FETCH_HEAD
         }
 
-        checkout_repo csgrs https://github.com/timschmidt/csgrs.git 16144c9ba4d4cff5353d66990a959e0b95f2f61a
-        checkout_repo hypercurve https://github.com/timschmidt/hypercurve.git e5943118b35d6f90eb32b477a02ea31ec1ceaf9a
+        checkout_repo csgrs https://github.com/timschmidt/csgrs.git 347c5cf8aa86aaa75234efa81a23a6e9c7adda82
+        checkout_repo hypercurve https://github.com/timschmidt/hypercurve.git 0fe4187a27eef65a99636402f6b7d0a81d1c3a2f
         checkout_repo hyperlattice https://github.com/timschmidt/hyperlattice.git c3e22b6509d4a42bf80c3f52665ca24a5c93653f
-        checkout_repo hyperlimit https://github.com/timschmidt/hyperlimit.git adc0157cffcb2116879320b64833dcdc8e3b172a
-        checkout_repo hypermesh https://github.com/timschmidt/hypermesh.git 4615414ebac5025657d6f7c295ec466b46016e04
-        checkout_repo hyperphysics https://github.com/timschmidt/hyperphysics.git 50abc870799fc2a1b3a0d86d3edadab4bd52906a
-        checkout_repo hyperreal https://github.com/timschmidt/hyperreal.git 137bee0a941801bc8c275384c872884e9cc9f1de
+        checkout_repo hyperlimit https://github.com/timschmidt/hyperlimit.git 838887426941ff5af2060aacd03597929519207f
+        checkout_repo hypermesh https://github.com/timschmidt/hypermesh.git 8562b2a3bc90c21cdc67095c022001b5f97addef
+        checkout_repo hyperphysics https://github.com/timschmidt/hyperphysics.git 86f84d0e470fe68bdec66459595a63cb1d8c8d7f
+        checkout_repo hyperreal https://github.com/timschmidt/hyperreal.git 69d843c6d8651f21d0f47f2f929c7625ea44c609
         checkout_repo hypersdf https://github.com/timschmidt/hypersdf.git 8340677f934ff44bb1ed91e37193ca719dddcd43
-        checkout_repo hypersolve https://github.com/timschmidt/hypersolve.git 3d0f25eb107a739b3e6ee947f9772608c2a5ad17
+        checkout_repo hypersolve https://github.com/timschmidt/hypersolve.git 821ff166e30da0e1a1d64c999dae2388459ccab2
         checkout_repo hypertri https://github.com/timschmidt/hypertriangulate.git 2f9b27222e2108ceffe7e2a9cf669c3c3e63a5e0
         checkout_repo openscad-rs https://github.com/timschmidt/openscad-rs.git 695af0746d8df284a7c7976e5664f4aa35f6a32a

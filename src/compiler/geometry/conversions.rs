@@ -9,7 +9,7 @@ use crate::compiler::types::MeshData;
 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 pub fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
     let vertex_capacity = mesh
-        .polygons
+        .triangles()
         .iter()
         .map(|polygon| polygon.vertices().len().saturating_sub(2) * 3)
         .sum();
@@ -17,7 +17,7 @@ pub fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
     let mut normals = Vec::with_capacity(vertex_capacity);
     let mut indices = Vec::with_capacity(vertex_capacity);
 
-    for poly in &mesh.polygons {
+    for poly in mesh.triangles() {
         for triangle in poly.triangulate_indices_finite_output() {
             let idx = positions.len() as u32;
             let triangle_positions = triangle.map(|vertex_index| {
@@ -66,7 +66,8 @@ pub fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
 #[cfg(test)]
 mod tests {
     use super::csg_mesh_to_mesh_data;
-    use csgrs::mesh::{Mesh, Polygon};
+    use csgrs::PolygonMesh;
+    use csgrs::polygon_mesh::Polygon;
     use csgrs::vertex::Vertex;
     use hyperlattice::{Point3, Real, Vector3};
 
@@ -88,7 +89,7 @@ mod tests {
             ],
             (),
         );
-        let mesh = Mesh::from_polygons(vec![polygon]);
+        let mesh = PolygonMesh::from_polygons(vec![polygon]).triangulate();
 
         let rendered = csg_mesh_to_mesh_data(&mesh).unwrap();
 

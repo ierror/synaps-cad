@@ -89,6 +89,116 @@ difference() {
 }
 
 #[test]
+fn near_coincident_rotated_cylinders_difference_compiles_without_warnings() {
+    let code = r#"
+        module view_rocket() {
+            difference() {
+                color("silver") cylinder(h = 40, r = 8);
+                color("red")
+                    rotate([0, 0.0001, 0])
+                        cylinder(h = 40, r = 8);
+            }
+        }
+
+        $view = "rocket";
+        if ($view == "rocket") view_rocket();
+    "#;
+
+    match compile_with_timeout(code, 0) {
+        CompilationResult::Success {
+            parts, warnings, ..
+        } => {
+            assert_eq!(
+                parts.len(),
+                1,
+                "expected one difference result; warnings={warnings:?}"
+            );
+            assert!(
+                !parts[0].indices.is_empty(),
+                "near-coincident difference result is empty"
+            );
+            assert!(
+                warnings.is_empty(),
+                "near-coincident difference emitted warnings: {warnings:?}"
+            );
+        }
+        CompilationResult::Error(error) => panic!("Compilation failed: {error}"),
+        CompilationResult::Canceled => panic!("Compilation was unexpectedly canceled"),
+    }
+}
+
+fn assert_one_part_without_warnings(code: &str, label: &str) {
+    match compile_with_timeout(code, 0) {
+        CompilationResult::Success {
+            parts, warnings, ..
+        } => {
+            assert_eq!(
+                parts.len(),
+                1,
+                "{label}: expected one result; warnings={warnings:?}"
+            );
+            assert!(
+                !parts[0].indices.is_empty(),
+                "{label}: result has no triangles"
+            );
+            assert!(warnings.is_empty(), "{label}: warnings={warnings:?}");
+        }
+        CompilationResult::Error(error) => panic!("{label}: compilation failed: {error}"),
+        CompilationResult::Canceled => panic!("{label}: compilation timed out"),
+    }
+}
+
+#[test]
+fn near_coincident_boolean_covers_signed_axes_and_angle_syntax() {
+    for (label, transform) in [
+        ("euler+x", "rotate([0.0001, 0, 0])"),
+        ("euler-x", "rotate([-0.0001, 0, 0])"),
+        ("euler+y", "rotate([0, 0.0001, 0])"),
+        ("euler-y", "rotate([0, -0.0001, 0])"),
+        ("euler+z", "rotate([0, 0, 0.0001])"),
+        ("euler-z", "rotate([0, 0, -0.0001])"),
+        ("scientific", "rotate([0, 1e-4, 0])"),
+        ("exact-expression", "rotate([0, 1/10000, 0])"),
+        ("axis-angle", "rotate(a = 0.0001, v = [0, 1, 0])"),
+    ] {
+        let code = format!(
+            r"
+            difference() {{
+                cylinder(h = 40, r = 8, $fn = 8);
+                {transform}
+                    cylinder(h = 40, r = 8, $fn = 8);
+            }}
+            "
+        );
+        assert_one_part_without_warnings(&code, label);
+    }
+}
+
+#[test]
+fn near_coincident_cylinders_cover_every_boolean_and_centering_mode() {
+    for (operation, center) in [
+        ("union", "false"),
+        ("intersection", "false"),
+        ("difference", "false"),
+        ("union", "true"),
+        ("intersection", "true"),
+        ("difference", "true"),
+    ] {
+        let label = format!("{operation}/center={center}");
+        let code = format!(
+            r"
+            {operation}() {{
+                cylinder(h = 40, r = 8, center = {center}, $fn = 8);
+                rotate([0, 0.0001, 0])
+                    cylinder(h = 40, r = 8, center = {center}, $fn = 8);
+            }}
+            "
+        );
+        assert_one_part_without_warnings(&code, &label);
+    }
+}
+
+#[test]
 fn test_star_polygon_standalone() {
     let code = r"
 linear_extrude(height = 2)
@@ -464,6 +574,127 @@ fn symbolic_constants_and_trig_reach_transforms() {
 }
 
 #[test]
+fn rotated_sqrt_two_square_certifies_shared_edge_through_boolean() {
+    let transformed = compile_to_csg_mesh(
+        r"
+        linear_extrude(height = 1)
+            rotate(-45)
+                square(sqrt(2));
+        ",
+    );
+    let one = csgrs::Real::one();
+    let transformed_corner_is_exact = transformed.triangles().iter().any(|triangle| {
+        triangle
+            .vertices()
+            .iter()
+            .any(|vertex| vertex.position.x == one && vertex.position.y == one)
+    });
+    assert!(
+        transformed_corner_is_exact,
+        "rotate(-45) must carry [0, sqrt(2)] to the exact point [1, 1]"
+    );
+
+    let union = compile_to_csg_mesh(
+        r"
+        linear_extrude(height = 1)
+            union() {
+                polygon([[0, 0], [0, 1], [1, 1]]);
+                rotate(-45)
+                    square(sqrt(2));
+            }
+        ",
+    );
+    union
+        .to_hypermesh_exact()
+        .expect("the exact shared-edge union should be a closed manifold");
+
+    let residual_shared_edge_faces = union
+        .triangles()
+        .iter()
+        .filter(|triangle| {
+            triangle
+                .vertices()
+                .iter()
+                .all(|vertex| vertex.position.x == vertex.position.y)
+        })
+        .count();
+    assert_eq!(
+        residual_shared_edge_faces, 0,
+        "the Boolean union retained triangles on the shared x = y seam"
+    );
+}
+
+#[test]
+fn touching_cubes_union_removes_internal_face() {
+    let mesh = compile_to_csg_mesh(
+        r"
+        union() {
+            cube([1, 1, 1]);
+            translate([1, 0, 0])
+                cube([1, 1, 1]);
+        }
+        ",
+    );
+    mesh.to_hypermesh_exact()
+        .expect("the touching-cube union should be a closed manifold");
+
+    let shared_x = csgrs::Real::one();
+    let internal_face_triangles = mesh
+        .triangles()
+        .iter()
+        .filter(|triangle| {
+            triangle
+                .vertices()
+                .iter()
+                .all(|vertex| vertex.position.x == shared_x)
+        })
+        .count();
+    assert_eq!(
+        internal_face_triangles, 0,
+        "the touching-cube union retained triangles on its internal x = 1 face"
+    );
+}
+
+#[test]
+fn polyhedron_with_independently_duplicated_patch_vertices_is_closed() {
+    let mesh = compile_to_csg_mesh(
+        r"
+        points = [
+            [0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0],
+            [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1],
+            [0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1],
+            [0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0],
+            [0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0],
+            [1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]
+        ];
+        faces = [
+            [0, 1, 2, 3],
+            [4, 5, 6, 7],
+            [8, 9, 10, 11],
+            [12, 13, 14, 15],
+            [16, 17, 18, 19],
+            [20, 21, 22, 23]
+        ];
+        polyhedron(points = points, faces = faces);
+        ",
+    );
+    let indexed = mesh
+        .to_hypermesh_exact()
+        .expect("independently indexed patches should weld into a closed polyhedron");
+
+    assert_eq!(
+        indexed.positions.len(),
+        8,
+        "the six independently indexed patches should weld to eight cube vertices"
+    );
+    assert_eq!(
+        indexed.triangles.len(),
+        12,
+        "the six quad patches should triangulate to twelve cube faces"
+    );
+}
+
+#[test]
 fn openscad_math_builtins_return_hyperreal_results_directly() {
     fn assert_real(value: Value, expected: &csgrs::Real) {
         assert!(matches!(value, Value::Number(actual) if &actual == expected));
@@ -669,7 +900,7 @@ fn symbolic_rotated_hull_uses_exact_retained_facts() {
         }
     ";
     let mesh = compile_to_csg_mesh(code);
-    assert!(!mesh.polygons.is_empty());
+    assert!(!mesh.triangles().is_empty());
     let rendered = csg_mesh_to_mesh_data_local(&mesh).expect("mesh conversion failed");
     assert!(!rendered.indices.is_empty());
 }
@@ -693,8 +924,8 @@ fn test_difference_hull_shapes() {
     ";
     let outer_mesh = compile_to_csg_mesh(outer);
     let inner_mesh = compile_to_csg_mesh(inner);
-    assert!(!outer_mesh.polygons.is_empty(), "outer hull is empty");
-    assert!(!inner_mesh.polygons.is_empty(), "inner hull is empty");
+    assert!(!outer_mesh.triangles().is_empty(), "outer hull is empty");
+    assert!(!inner_mesh.triangles().is_empty(), "inner hull is empty");
 
     let code = format!("difference() {{ {outer} {inner} }}");
     let csg = compile_to_csg_mesh(&code);

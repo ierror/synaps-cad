@@ -1,8 +1,9 @@
+use csgrs::PolygonMesh;
 use csgrs::Profile;
 use csgrs::Real;
 use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
-use csgrs::mesh::Polygon;
+use csgrs::polygon_mesh::Polygon;
 use csgrs::vertex::Vertex;
 use hyperlattice::{Point3, Vector3};
 
@@ -169,32 +170,18 @@ impl Evaluator {
                 .normalize()
                 .unwrap_or_else(|_| Vector3::zero());
 
-            if pts.len() == 3 {
-                let verts: Vec<_> = pts
-                    .iter()
-                    .map(|p| Vertex::new(point_from_real(p), normal.clone()))
-                    .collect();
-                polygons.push(Polygon::new(verts, ()));
-            } else {
-                // Fan-triangulate faces with more than three vertices.
-                let p0 = point_from_real(pts[0]);
-                for i in 1..pts.len() - 1 {
-                    let p1 = point_from_real(pts[i]);
-                    let p2 = point_from_real(pts[i + 1]);
-                    let verts = vec![
-                        Vertex::new(p0.clone(), normal.clone()),
-                        Vertex::new(p1, normal.clone()),
-                        Vertex::new(p2, normal.clone()),
-                    ];
-                    polygons.push(Polygon::new(verts, ()));
-                }
-            }
+            let vertices = pts
+                .iter()
+                .map(|point| Vertex::new(point_from_real(point), normal.clone()))
+                .collect();
+            polygons.push(Polygon::new(vertices, ()));
         }
 
         if polygons.is_empty() {
             return None;
         }
-        Some(Shape::from_csg_mesh(CsgMesh::from_polygons(polygons)))
+        let mesh = PolygonMesh::from_polygons(polygons).triangulate();
+        Some(Shape::from_csg_mesh(mesh))
     }
 
     #[must_use]

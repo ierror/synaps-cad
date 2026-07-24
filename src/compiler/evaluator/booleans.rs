@@ -115,12 +115,12 @@ impl Evaluator {
         if child_shapes.is_empty() {
             return None;
         }
-        let mut all_polygons = Vec::new();
+        let mut all_triangles = Vec::new();
         for shape in child_shapes {
             let mesh = shape.into_csg_mesh();
-            all_polygons.extend(mesh.polygons);
+            all_triangles.extend(mesh.into_triangles());
         }
-        let combined = CsgMesh::from_polygons(all_polygons);
+        let combined = CsgMesh::from_triangles(all_triangles).ok()?;
         Some(Shape::from_csg_mesh(combined.convex_hull(())))
     }
 
