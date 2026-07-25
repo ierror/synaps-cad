@@ -5,7 +5,7 @@ use csgrs::Real;
 use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
 use csgrs::mesh::plane::Plane;
-use hyperlattice::{Matrix4, Vector3};
+use hyperlattice::{Matrix4, RealSign, Vector3};
 
 #[derive(Clone, Copy, Debug)]
 pub enum BoolOp {
@@ -184,18 +184,40 @@ impl Shape {
     /// Rotates around an arbitrary exact axis without a primitive-float Euler conversion.
     #[must_use]
     pub fn rotate_axis_angle(self, axis: &Vector3, angle_degrees: &Real) -> Self {
+        // Route exact coordinate axes through the retained csgrs rigid-rotation
+        // object. This is geometrically identical to Rodrigues' formula, while
+        // preserving its transformed support-plane certificates for HyperMesh.
+        for coordinate in 0..3 {
+            if (0..3)
+                .filter(|&candidate| candidate != coordinate)
+                .all(|candidate| axis.0[candidate].definitely_zero())
+            {
+                let angle = match axis.0[coordinate].refine_sign_until(128) {
+                    Some(RealSign::Positive) => angle_degrees.clone(),
+                    Some(RealSign::Negative) => -angle_degrees.clone(),
+                    Some(RealSign::Zero) | None => break,
+                };
+                let zero = Real::zero();
+                return match coordinate {
+                    0 => self.rotate(angle, zero.clone(), zero),
+                    1 => self.rotate(zero.clone(), angle, zero),
+                    2 => self.rotate(zero.clone(), zero, angle),
+                    _ => unreachable!(),
+                };
+            }
+        }
         let planar = axis.0[0] == Real::zero() && axis.0[1] == Real::zero();
         let matrix = match Matrix4::rotation_axis_angle(axis, angle_degrees.to_radians()) {
             Ok(matrix) => matrix,
             Err(error) => return Self::Failed(format!("axis-angle rotation failed: {error:?}")),
         };
         match self {
-            Self::Mesh3D(mesh) => Self::Mesh3D(mesh.transform(&matrix)),
+            Self::Mesh3D(mesh) => Self::Mesh3D(mesh.transform_rigid(&matrix)),
             Self::Sketch2D(sketch) if planar => Self::Sketch2D(sketch.transform(&matrix)),
             Self::Sketch2D(sketch) => Self::Mesh3D(
                 sketch
                     .extrude(Self::sketch_thickness(), ())
-                    .transform(&matrix),
+                    .transform_rigid(&matrix),
             ),
             Self::Failed(error) => Self::Failed(error),
         }
@@ -228,20 +250,7 @@ fn try_csg_bool(
 fn csg_bool(lhs: CsgMesh<()>, rhs: CsgMesh<()>, op: BoolOp) -> Shape {
     match try_csg_bool(&lhs, &rhs, op) {
         Ok(mesh) => Shape::Mesh3D(mesh),
-        Err(exact_error) => {
-            let Some(lhs) = lhs.materialize_finite_output() else {
-                return Shape::Failed(format!("exact {op:?} failed: {exact_error}"));
-            };
-            let Some(rhs) = rhs.materialize_finite_output() else {
-                return Shape::Failed(format!("exact {op:?} failed: {exact_error}"));
-            };
-            match try_csg_bool(&lhs, &rhs, op) {
-                Ok(mesh) => Shape::Mesh3D(mesh),
-                Err(finite_error) => Shape::Failed(format!(
-                    "exact {op:?} failed: {exact_error}; finite output retry failed: {finite_error}"
-                )),
-            }
-        }
+        Err(error) => Shape::Failed(format!("exact {op:?} failed: {error}")),
     }
 }
 
@@ -250,7 +259,9 @@ pub mod conversions;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use csgrs::{mesh::Triangle, vertex::Vertex};
     use hypercurve::{Curve2, CurvePath2, CurveRegion2, LineSeg2, Point2, QuadraticBezier2};
+    use hyperlattice::Point3;
 
     fn point(x: i64, y: i64) -> Point2 {
         Point2::new(Real::from(x), Real::from(y))
@@ -290,5 +301,36 @@ mod tests {
                 .triangles()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn exact_boolean_failure_is_reported_without_a_finite_retry() {
+        let open = CsgMesh::from_triangles(vec![Triangle::new(
+            vec![
+                Vertex::new(Point3::origin(), Vector3::z()),
+                Vertex::new(
+                    Point3::new(Real::one(), Real::zero(), Real::zero()),
+                    Vector3::z(),
+                ),
+                Vertex::new(
+                    Point3::new(Real::zero(), Real::one(), Real::zero()),
+                    Vector3::z(),
+                ),
+            ],
+            (),
+        )])
+        .unwrap();
+        let result = csg_bool(
+            open,
+            CsgMesh::cube(Real::from(2_u8), ()),
+            BoolOp::Difference,
+        );
+        let Shape::Failed(error) = result else {
+            panic!("an open Boolean input must remain an explicit exact failure");
+        };
+        assert!(error.contains("exact Difference failed"));
+        assert!(error.contains("boundary edges"));
+        assert!(!error.contains("finite"));
+        assert!(!error.contains("retry"));
     }
 }
